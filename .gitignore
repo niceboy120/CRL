@@ -1,0 +1,29 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+.idea/
+.vscode/
+
+*.csv
+*.txt
+*.ascii
+
+*.log
+*.xlsx
+*.tex
+*.pdf
+
+# for excluding the uncompressed dataset files.
+*.tar.gz
+*.DS_Store
+*._*
+
+*.pkl
+*.pickle
+temp.*
+
+.inter
+.item
+.user
