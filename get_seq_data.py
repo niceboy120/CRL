@@ -1,6 +1,6 @@
 
 
-from environments.ML_1M.ml1m import get_seq_data_and_rewards
+from environments.ML_1M.ml1m_data import get_seq_data_and_rewards
 # for ml-1m
 
 

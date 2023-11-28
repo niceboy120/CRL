@@ -6,8 +6,10 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from numba import njit
 
-from ..utils import get_novelty, get_serendipity
-from ..base import BaseEnv
+from environments.ML_1M.ml1m_env import ML1MEnv
+from environments.base_data import BaseData
+from inputs import SparseFeatP, DenseFeat
+from ..utils import get_novelty, get_serendipity, get_diversiy
 
 
 ENVPATH = os.path.dirname(__file__)
@@ -15,20 +17,37 @@ DATAPATH = os.path.join(ENVPATH, "data")
 FIGPATH = os.path.join(ENVPATH, "figs")
 RESULTPATH = os.path.join(ENVPATH, "data_processed")
 
-# seq_columns = ['item_id', "rating"] + [f"feat{x}" for x in range(6)]
-seq_columns = ['item_id'] + [f"feat{x}" for x in range(6)]
+seq_columns = ['item_id'] + [f"feat{x}" for x in range(6)] + ["rating"]
+# seq_columns = ['item_id'] + [f"feat{x}" for x in range(6)]
+
+
 
 for path in [FIGPATH, RESULTPATH]:
     if not os.path.exists(path):
         os.mkdir(path)
 
-class ML1MEnv(BaseEnv):
-    def __init__(self, *args, **kwargs):
-        self.RESULTPATH = RESULTPATH
-        self.FIGPATH = FIGPATH
-        self.DATAPATH = DATAPATH
-        super().__init__(*args, **kwargs)
-    
+class ML1MData(BaseData):
+
+    @staticmethod
+    def get_env_class():
+        return ML1MEnv
+
+    @staticmethod
+    def get_xy_columns(df_user, df_item, user_features, item_features, reward_features, entity_dim, feature_dim):
+        feat_item = [x for x in df_item.columns if x[:4] == "feat"]
+        user_columns = \
+            [SparseFeatP("user_id", df_user.index.max() + 1, embedding_dim=entity_dim)] + \
+            [SparseFeatP(col, df_user[col].max() + 1, embedding_dim=feature_dim, padding_idx=0) for col in user_features[1:]]
+        item_columns = \
+            [SparseFeatP("item_id", df_item.index.max() + 1, embedding_dim=entity_dim)] + \
+            [SparseFeatP(x, df_item[feat_item].max().max() + 1, embedding_dim=feature_dim,
+                         embedding_name="feat",  # Share the same feature!
+                         padding_idx=0,  # using padding_idx in embedding!
+                         ) for x in feat_item] + \
+            [DenseFeat("rating", dimension=1, embedding_dim=feature_dim)]
+        reward_columns = [DenseFeat(name, dimension=1, embedding_dim=feature_dim) for name in reward_features]
+        return user_columns, item_columns, reward_columns
+
     @staticmethod
     def get_features(use_userinfo=False):
         user_features = ["user_id"]
@@ -44,6 +63,7 @@ class ML1MEnv(BaseEnv):
         mat = np.loadtxt(mat_path, delimiter=",")
         
         mat[mat<0] = 0
+        mat[mat > 5] = 5
         mat_new = np.zeros((mat.shape[0] + 1, mat.shape[1] + 1))
         mat_new[1:, 1:] = mat
         return mat_new
@@ -55,7 +75,7 @@ class ML1MEnv(BaseEnv):
         df_user = pd.read_csv(filepath, sep="\t", header=0,
                                names=["user_id", "age", "gender", "occupation", "zip_code"],
                                dtype={0: int, 1: int, 2: str, 3: int, 4: str},)
-        df_user["zip_code"].apply(lambda x: x.split("-")[0])
+        df_user["zip_code"] = df_user["zip_code"].apply(lambda x: x.split("-")[0])
         
         age_range = [0, 18, 25, 35, 45, 50, 56]
         df_user['age_range'] = pd.cut(df_user['age'], bins=age_range, labels=False)
@@ -109,14 +129,14 @@ class ML1MEnv(BaseEnv):
 
     @staticmethod
     def load_item_feat(only_small=False):
-        list_feat, df_feat = ML1MEnv.load_category()
+        list_feat, df_feat = ML1MData.load_category()
         df_item = df_feat
         return df_item
     
     @staticmethod
     def get_seq_data(max_item_list_len, len_reward_to_go, reload):
         # columns = ['user_id', 'item_id', 'rating', "timestamp"]
-        df_seq_rewards, hist_seq_dict, to_go_seq_dict = BaseEnv.get_and_save_seq_data(ML1MEnv, RESULTPATH, seq_columns, max_item_list_len, len_reward_to_go, reload=reload)
+        df_seq_rewards, hist_seq_dict, to_go_seq_dict = BaseData.get_and_save_seq_data(ML1MData, RESULTPATH, seq_columns, max_item_list_len, len_reward_to_go, reload=reload)
         return df_seq_rewards, hist_seq_dict, to_go_seq_dict
 
     @staticmethod
@@ -150,16 +170,16 @@ class ML1MEnv(BaseEnv):
         user_feat_path = os.path.join(DATAPATH, "ml-1m.user")
         item_feat_path = os.path.join(DATAPATH, "ml-1m.item")
 
-        df = ML1MEnv.get_df_ml_1m(inter_path)
+        df = ML1MData.get_df_ml_1m(inter_path)
         
         # len_inters = [len(x[1]) for x in df.groupby("user_id")]
         # len_inters = np.array(len_inters)
         # np.percentile(len_inters, 20)
 
 
-        df_user = ML1MEnv.load_user_feat()
+        df_user = ML1MData.load_user_feat()
         # df_item = ML1MEnv.load_item_feat()
-        list_feat, df_item = ML1MEnv.load_category()
+        list_feat, df_item = ML1MData.load_category()
 
         return df, df_user, df_item, list_feat
 
@@ -279,95 +299,6 @@ class ML1MEnv(BaseEnv):
 
 
 #     return df_user, df_item
-
-
-
-
-
-def get_diversiy(series_tags_items, to_go_item_array):
-    indices = series_tags_items.index.to_numpy()
-    
-    list_tags_items = series_tags_items.to_list()
-    # list_tags_items = [list(x) for x in list_tags_items]
-    list_tags_items = [x.astype(int) for x in list_tags_items]
-    
-    print("start computing diversity...")
-    res = compute_diversity(to_go_item_array, indices, list_tags_items)
-    print("diversity computed.")
-
-    # map_rawId_to_newId = dict(zip(series_tags_items.index, np.arange(len(series_tags_items))))
-    # total_num = len(to_go_item_array[0]) * (len(to_go_item_array[0]) - 1) / 2
-    # res = np.zeros(len(to_go_item_array), dtype=np.float64)
-
-    # div_func = lambda x, y: len(set(x) & set(y)) / len(set(x) | set(y))
-    # for k, seq in tqdm(
-    #     enumerate(to_go_item_array),
-    #     total=len(to_go_item_array),
-    #     desc="computing diversity",
-    # ):
-    #     # for k, seq in enumerate(all_item_ind_array):
-    #     # cats = df_item.loc[seq]["genre_int"]
-    #     # index = [item_index_dict[item] for item in seq]
-    #     seq_transformed = [map_rawId_to_newId[item] for item in seq.tolist()]
-    #     cats = series_tags_items[seq_transformed]
-    #     # cats = np.zeros(len(seq))
-    #     total_div = 0
-    #     for ind, cat in enumerate(cats):
-    #         # print(ind, item)
-    #         # df_item.loc[item, "genre_int"] = cats
-    #         for hist_cat in cats[:ind]:
-    #             # print(hist_item)
-    #             div = div_func(hist_cat, cat)
-    #             total_div += div
-    #     total_div /= total_num
-
-    #     # print(total_div)
-    #     res[k] = 1 - total_div
-    return res
-
-
-
-@njit
-def compute_diversity(to_go_item_array, indices, list_tags_items):
-    # list_tags_items = [list(x) for x in list_tags_items]
-
-    map_rawId_to_newId = dict(zip(indices, np.arange(len(list_tags_items))))
-    total_num = len(to_go_item_array[0]) * (len(to_go_item_array[0]) - 1) / 2
-    res = np.zeros(len(to_go_item_array), dtype=np.float64)
-
-    div_func = lambda x, y: len(set(x) & set(y)) / len(set(x) | set(y))
-
-    # for k, seq in tqdm(
-    #     enumerate(to_go_item_array),
-    #     total=len(to_go_item_array),
-    #     desc="computing diversity",
-    # ):
-    for k, seq in enumerate(to_go_item_array):
-        # for k, seq in enumerate(all_item_ind_array):
-        # cats = df_item.loc[seq]["genre_int"]
-        # index = [item_index_dict[item] for item in seq]
-        seq_transformed = [map_rawId_to_newId[item] for item in seq]
-        # cats = list_tags_items[seq_transformed]
-        cats = [list_tags_items[item] for item in seq_transformed]
-
-        # cats = np.zeros(len(seq))
-        total_div = 0.0
-        for ind, cat in enumerate(cats):
-            # print(ind, item)
-            # df_item.loc[item, "genre_int"] = cats
-            for hist_cat in cats[:ind]:
-                # print(hist_item)
-                if len(hist_cat) == 0 or len(cat) == 0:
-                    div = 0
-                else:
-                    div = div_func(list(hist_cat), list(cat))
-                total_div += div
-        total_div /= total_num
-
-        # print(total_div)
-        res[k] = 1 - total_div
-        # print("done!")
-    return res
 
 
 # target_df, to_go_seq_dict

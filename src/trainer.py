@@ -1,5 +1,7 @@
 import math
 import os
+
+import logzero
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -100,26 +102,18 @@ class Trainer:
 
                 pbar.set_description(f"epoch {epoch + 1} iter {it}: train loss {loss.item():.5f}. lr {lr:e}")
 
-        self.tokens = 0
-
-        for epoch in range(config.max_epochs):
-            eval_return, eval_std = self.collector.collect()  # for debug
+        self.tokens = 0  # counter used for learning rate decay
+        for epoch in range(config.max_epochs + 1):
+            # res = self.collector.collect()  # for debug
             # eval_return, eval_std = self.get_returns(0) # for debug
-            run_epoch('train', epoch_num=epoch)
-            # eval_return, eval_std = self.get_returns(0)
-            eval_return, eval_std = self.collector.collect()
-            if writer is not None:
-                writer.add_scalar('eval_return', eval_return, epoch)
-                writer.add_scalar('eval_std', eval_std, epoch)
+            if epoch > 0:
+                run_epoch('train', epoch_num=epoch)
 
-            if self.config.args.save_model:
-                if not os.path.exists(self.config.args.save_dir):
-                    os.makedirs(self.config.args.save_dir)
-                raw_model = self.model.module if hasattr(self.model, "module") else self.model
-                fn = "_".join([str(x) for x in [self.config.args.model_type, self.config.args.game,
-                                                self.config.args.seq_len, self.config.args.seed,
-                                                self.config.args.patch_size, epoch]]) + ".pth"
-                torch.save(raw_model.state_dict(), os.path.join(self.config.args.save_dir, fn))
+            res = self.collector.collect()
+            logzero.logger.info(f"Epoch: [{epoch}], Info: [{res}]")
+            if writer is not None:
+                for key, value in res.items():
+                    writer.add_scalar(key, value, epoch)
 
     def test(self):
 

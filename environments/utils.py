@@ -113,32 +113,120 @@ def get_serendipity(series_tags_items, to_go_item_array, to_go_rating_array, lik
     print(f"computed done for {like_threshold} ...")
     return res
 
-def get_diversiy(df_item_tags, all_item_ind_array):
+
+def get_diversiy(series_tags_items, to_go_item_array):
+    indices = series_tags_items.index.to_numpy()
+
+    list_tags_items = series_tags_items.to_list()
+    # list_tags_items = [list(x) for x in list_tags_items]
+    list_tags_items = [x.astype(int) for x in list_tags_items]
+
+    print("start computing diversity...")
+    res = compute_diversity(to_go_item_array, indices, list_tags_items)
+    print("diversity computed.")
+
+    # map_rawId_to_newId = dict(zip(series_tags_items.index, np.arange(len(series_tags_items))))
+    # total_num = len(to_go_item_array[0]) * (len(to_go_item_array[0]) - 1) / 2
+    # res = np.zeros(len(to_go_item_array), dtype=np.float64)
+
+    # div_func = lambda x, y: len(set(x) & set(y)) / len(set(x) | set(y))
+    # for k, seq in tqdm(
+    #     enumerate(to_go_item_array),
+    #     total=len(to_go_item_array),
+    #     desc="computing diversity",
+    # ):
+    #     # for k, seq in enumerate(all_item_ind_array):
+    #     # cats = df_item.loc[seq]["genre_int"]
+    #     # index = [item_index_dict[item] for item in seq]
+    #     seq_transformed = [map_rawId_to_newId[item] for item in seq.tolist()]
+    #     cats = series_tags_items[seq_transformed]
+    #     # cats = np.zeros(len(seq))
+    #     total_div = 0
+    #     for ind, cat in enumerate(cats):
+    #         # print(ind, item)
+    #         # df_item.loc[item, "genre_int"] = cats
+    #         for hist_cat in cats[:ind]:
+    #             # print(hist_item)
+    #             div = div_func(hist_cat, cat)
+    #             total_div += div
+    #     total_div /= total_num
+
+    #     # print(total_div)
+    #     res[k] = 1 - total_div
+    return res
+
+
+@njit
+def compute_diversity(to_go_item_array, indices, list_tags_items):
+    # list_tags_items = [list(x) for x in list_tags_items]
+
+    map_rawId_to_newId = dict(zip(indices, np.arange(len(list_tags_items))))
+    total_num = len(to_go_item_array[0]) * (len(to_go_item_array[0]) - 1) / 2
+    res = np.zeros(len(to_go_item_array), dtype=np.float64)
+
     div_func = lambda x, y: len(set(x) & set(y)) / len(set(x) | set(y))
-    total_num = len(all_item_ind_array[0]) * (len(all_item_ind_array[0]) - 1) / 2
-    res = np.zeros(len(all_item_ind_array), dtype=np.float64)
-    for k, seq in tqdm(
-        enumerate(all_item_ind_array),
-        total=len(all_item_ind_array),
-        desc="computing diversity",
-    ):
+
+    # for k, seq in tqdm(
+    #     enumerate(to_go_item_array),
+    #     total=len(to_go_item_array),
+    #     desc="computing diversity",
+    # ):
+    for k, seq in enumerate(to_go_item_array):
         # for k, seq in enumerate(all_item_ind_array):
         # cats = df_item.loc[seq]["genre_int"]
         # index = [item_index_dict[item] for item in seq]
-        cats = df_item_tags[seq]
+        seq_transformed = [map_rawId_to_newId[item] for item in seq]
+        # cats = list_tags_items[seq_transformed]
+        cats = [list_tags_items[item] for item in seq_transformed]
+
         # cats = np.zeros(len(seq))
-        total_div = 0
+        total_div = 0.0
         for ind, cat in enumerate(cats):
             # print(ind, item)
             # df_item.loc[item, "genre_int"] = cats
             for hist_cat in cats[:ind]:
                 # print(hist_item)
-                div = div_func(hist_cat, cat)
+                if len(hist_cat) == 0 or len(cat) == 0:
+                    div = 0
+                else:
+                    div = div_func(list(hist_cat), list(cat))
                 total_div += div
         total_div /= total_num
+
         # print(total_div)
         res[k] = 1 - total_div
+        # print("done!")
     return res
+
+
+
+# # for orignal kuairand1k
+# def get_diversiy(df_item_tags, all_item_ind_array):
+#     div_func = lambda x, y: len(set(x) & set(y)) / len(set(x) | set(y))
+#     total_num = len(all_item_ind_array[0]) * (len(all_item_ind_array[0]) - 1) / 2
+#     res = np.zeros(len(all_item_ind_array), dtype=np.float64)
+#     for k, seq in tqdm(
+#         enumerate(all_item_ind_array),
+#         total=len(all_item_ind_array),
+#         desc="computing diversity",
+#     ):
+#         # for k, seq in enumerate(all_item_ind_array):
+#         # cats = df_item.loc[seq]["genre_int"]
+#         # index = [item_index_dict[item] for item in seq]
+#         cats = df_item_tags[seq]
+#         # cats = np.zeros(len(seq))
+#         total_div = 0
+#         for ind, cat in enumerate(cats):
+#             # print(ind, item)
+#             # df_item.loc[item, "genre_int"] = cats
+#             for hist_cat in cats[:ind]:
+#                 # print(hist_item)
+#                 div = div_func(hist_cat, cat)
+#                 total_div += div
+#         total_div /= total_num
+#         # print(total_div)
+#         res[k] = 1 - total_div
+#     return res
 
 
 

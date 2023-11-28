@@ -11,7 +11,7 @@ from ctrl import CTRL, CTRLConfig
 
 from utils import log_config
 # from inputs import SparseFeatP
-from data import get_EnvClass, get_common_args, get_datapath, prepare_dataset
+from data import get_DataClass, get_common_args, get_datapath, prepare_dataset
 
 from trainer import Trainer, TrainerConfig
 
@@ -19,10 +19,10 @@ from trainer import Trainer, TrainerConfig
 # from starformer import Starformer, StarformerConfig
 
 original_repr = torch.Tensor.__repr__
-# torch.Tensor.__repr__ = lambda self: "<Tensor shape={}, device={}, dtype={}, value={}>".format(tuple(self.shape), self.device, self.dtype, original_repr(self))
-torch.Tensor.__repr__ = lambda self: "<Tensor shape={}, device={}, dtype={}>".format(
-    tuple(self.shape), self.device, self.dtype
-)
+torch.Tensor.__repr__ = lambda self: "<Tensor shape={}, device={}, dtype={}, value=\n{}>".format(tuple(self.shape), self.device, self.dtype, original_repr(self))
+# torch.Tensor.__repr__ = lambda self: "<Tensor shape={}, device={}, dtype={}>".format(
+#     tuple(self.shape), self.device, self.dtype
+# )
 
 
 def get_args():
@@ -76,9 +76,7 @@ def main(args):
     args = get_common_args(args)
     log_config(args)
 
-    train_dataset, test_dataset, df_seq_rewards = prepare_dataset(args)
-    
-
+    train_dataset, test_dataset, env, mat = prepare_dataset(args)
     # get model
     mconf = CTRLConfig(
         train_dataset.num_items, pos_drop=0.1, resid_drop=0.1, 
@@ -89,13 +87,6 @@ def main(args):
     )
     model = CTRL(mconf).to(args.device)
 
-    EnvClass = get_EnvClass(args.env)
-    # from environments.ML_1M.ml1m import ML1MEnv
-    # ML1MEnv(df_seq_rewards, pareto_reload=args.reload)
-    env = EnvClass(df_seq_rewards, pareto_reload=args.reload)
-    mat = EnvClass.get_completed_data()
-
-    
     tconf = TrainerConfig(
         max_epochs=args.epochs, batch_size=args.batch_size, learning_rate=args.lr, num_items=train_dataset.num_items,
         lr_decay=True, warmup_tokens=512 * 20,

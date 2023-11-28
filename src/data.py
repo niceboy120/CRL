@@ -97,7 +97,7 @@ def get_datapath(envname):
 
 
 def get_xy_columns(
-    envname,
+    DataClass,
     df_data,
     df_user,
     df_item,
@@ -106,80 +106,44 @@ def get_xy_columns(
     reward_features,
     entity_dim,
     feature_dim,
-    max_length,
 ):
-    if envname == "KuaiRand-1K":
-        feat_item = [x for x in df_item.columns if x[:4] == "feat"]
-        user_columns = \
-            [SparseFeatP("user_id", df_data["user_id"].max() + 1, embedding_dim=entity_dim)] + \
-            [SparseFeatP(col, df_user[col].max() + 1, embedding_dim=feature_dim, padding_idx=0) for col in user_features[1:]]
-        item_columns = ([SparseFeatP("item_id", df_data["item_id"].max() + 1, embedding_dim=entity_dim)] + \
-                        [SparseFeatP(x, df_item[feat_item].max().max() + 1, embedding_dim=feature_dim, 
-                                       embedding_name="feat",  # Share the same feature!
-                                       padding_idx=0)  # using padding_idx in embedding!
-                                       for x in feat_item
-                        ] + \
-                        [DenseFeat("duration_normed", 1)])
+    # if envname == "KuaiRand-1K":
+    #     feat_item = [x for x in df_item.columns if x[:4] == "feat"]
+    #     user_columns = \
+    #         [SparseFeatP("user_id", df_data["user_id"].max() + 1, embedding_dim=entity_dim)] + \
+    #         [SparseFeatP(col, df_user[col].max() + 1, embedding_dim=feature_dim, padding_idx=0) for col in user_features[1:]]
+    #     item_columns = ([SparseFeatP("item_id", df_data["item_id"].max() + 1, embedding_dim=entity_dim)] + \
+    #                     [SparseFeatP(x, df_item[feat_item].max().max() + 1, embedding_dim=feature_dim,
+    #                                    embedding_name="feat",  # Share the same feature!
+    #                                    padding_idx=0)  # using padding_idx in embedding!
+    #                                    for x in feat_item
+    #                     ] + \
+    #                     [DenseFeat("duration_normed", 1)])
+    #
+    #     seq_columns = [VarLenSparseFeat(SparseFeat("hist_item", 3 + 1, embedding_dim=8), 4, length_name="seq_length")]
+    #
 
-        seq_columns = [VarLenSparseFeat(SparseFeat("hist_item", 3 + 1, embedding_dim=8), 4, length_name="seq_length")]
+    user_columns, item_columns, reward_columns = DataClass.get_xy_columns(df_user, df_item, user_features, item_features, reward_features, entity_dim, feature_dim)
 
-    elif envname == "ml-1m":
-        feat_item = [x for x in df_item.columns if x[:4] == "feat"]
-        user_columns = \
-            [SparseFeatP("user_id", df_user.index.max() + 1, embedding_dim=entity_dim)] + \
-            [SparseFeatP(col, df_user[col].max() + 1, embedding_dim=feature_dim, padding_idx=0) for col in user_features[1:]]
-        item_columns = \
-            [SparseFeatP("item_id", df_item.index.max() + 1, embedding_dim=entity_dim)] + \
-            [SparseFeatP(x, df_item[feat_item].max().max() + 1, embedding_dim=feature_dim,
-                embedding_name="feat",  # Share the same feature!
-                padding_idx=0,  # using padding_idx in embedding!
-            ) for x in feat_item]
-        reward_columns = [
-            DenseFeat(name, dimension=1, embedding_dim=feature_dim)
-            for name in reward_features
-        ]
-
-        # seq_columns = []
-        # for column in item_columns:
-        #     var_name = column.name + "_list"
-
-        #     if var_name == "item_id_list":
-        #         vacabulary_size = df_item.index.max() + 1
-        #         embedding_dim = entity_dim
-        #     else:
-        #         vacabulary_size = df_item[feat_item].max().max() + 1
-        #         embedding_dim = feature_dim
-
-        #     var_column = VarLenSparseFeat(
-        #         SparseFeat(var_name, vocabulary_size=vacabulary_size,
-        #                    embedding_dim=embedding_dim,
-        #                    embedding_name=column.name),
-        #         maxlen=max_length, length_name="seq_length")
-
-        #     seq_columns.append(var_column)
-        seq_columns = item_columns
-
-        # x_columns = {"user_columns": user_columns, "item_columns": item_columns, "seq_columns": seq_columns, "reward_columns": reward_columns}
-        x_columns = user_columns + reward_columns
-
-        # y_column = [DenseFeat("y", 1)]
-        y_column = item_columns[0]
+    seq_columns = item_columns
+    x_columns = user_columns + reward_columns
+    y_column = item_columns[0]
 
     return x_columns, seq_columns, y_column
 
 
-def get_EnvClass(envname):
+def get_DataClass(envname):
     if envname == "KuaiRand-1K":
         from environments.KuaiRand_1K.kuairand1k import KuaiRand1KEnv
-        EnvClass = KuaiRand1KEnv
+        DataClass = KuaiRand1KEnv
 
     elif envname == "ml-1m":
         # from environments.ml1m import ML1MEnv, DATAPATH
-        from environments.ML_1M.ml1m import ML1MEnv
-        EnvClass = ML1MEnv
+        from environments.ML_1M.ml1m_data import ML1MData
+        DataClass = ML1MData
     else:
         raise NotImplementedError
-    return EnvClass
+    return DataClass
 
 
 def split_and_construct_dataset(df_user, df_item, x_columns, seq_columns, y_column, df_seq_rewards, hist_seq_dict, to_go_seq_dict, max_seq_length, len_reward_to_go):
@@ -239,14 +203,14 @@ def split_and_construct_dataset(df_user, df_item, x_columns, seq_columns, y_colu
 
 
 def prepare_dataset(args):
-    EnvClass = get_EnvClass(args.env)
-    user_features, item_features, reward_features = EnvClass.get_features(args.use_userinfo)
+    DataClass = get_DataClass(args.env)
+    user_features, item_features, reward_features = DataClass.get_features(args.use_userinfo)
 
-    df_data, df_user, df_item, list_feat = EnvClass.get_data()
+    df_data, df_user, df_item, list_feat = DataClass.get_data()
 
-    x_columns, seq_columns, y_column = get_xy_columns(
-        args.env, df_data, df_user, df_item, user_features, item_features, reward_features,
-          args.local_D, args.local_D, args.max_item_list_len)
+    x_columns, seq_columns, y_column = get_xy_columns(DataClass, df_data, df_user, df_item,
+                                                      user_features, item_features, reward_features,
+                                                      args.local_D, args.local_D)
 
     df_seq_rewards, hist_seq_dict, to_go_seq_dict = get_sequence_data(
         args.env, args.max_item_list_len, args.len_reward_to_go, args.reload
@@ -256,14 +220,19 @@ def prepare_dataset(args):
         x_columns, seq_columns, y_column, df_seq_rewards, hist_seq_dict, to_go_seq_dict, 
         args.max_item_list_len - args.len_reward_to_go, args.len_reward_to_go)
 
-    return train_dataset, test_dataset, df_seq_rewards
+    EnvClass = DataClass.get_env_class()
+    env = EnvClass(df_seq_rewards, target_features=reward_features, pareto_reload=args.reload)
+    env.compile_test(df_data, df_user, df_item)
+    mat = DataClass.get_completed_data()
+
+    return train_dataset, test_dataset, env, mat
 
 
 def get_sequence_data(envname, max_item_list_len, len_reward_to_go, reload):
     # df_train, df_user, df_item, list_feat = None, None, None, None
-    EnvClass = get_EnvClass(envname)
+    DataClass = get_DataClass(envname)
 
-    df_seq_rewards, hist_seq_dict, to_go_seq_dict = EnvClass.get_seq_data(max_item_list_len, len_reward_to_go, reload=reload)
+    df_seq_rewards, hist_seq_dict, to_go_seq_dict = DataClass.get_seq_data(max_item_list_len, len_reward_to_go, reload=reload)
 
     return df_seq_rewards, hist_seq_dict, to_go_seq_dict
 

@@ -13,7 +13,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from multiprocessing import Pool
 
-from ..base import BaseEnv
+from ..base_env import BaseEnv
 from ..utils import get_diversiy, get_novelty, get_seq_dict, get_serendipity
 
 

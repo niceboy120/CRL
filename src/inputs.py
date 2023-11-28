@@ -240,7 +240,7 @@ def input_from_feature_columns(X, feature_columns, embedding_dict, feature_index
         feat in sparse_feature_columns]
     
     dense_list = [embedding_dict[feat.name](
-        X[:, feature_index[feat.name][0]:feature_index[feat.name][1]]).unsqueeze(1) for feat in dense_feature_columns]
+        X[:, feature_index[feat.name][0]:feature_index[feat.name][1]].unsqueeze(-1)) for feat in dense_feature_columns]
 
     # sequence_embed_dict = varlen_embedding_lookup(X, embedding_dict, feature_index,
     #                                               varlen_sparse_feature_columns)
