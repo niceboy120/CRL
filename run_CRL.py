@@ -22,7 +22,7 @@ original_repr = torch.Tensor.__repr__
 torch.Tensor.__repr__ = lambda self: "<Tensor shape={}, device={}, dtype={}, value=\n{}>".format(tuple(self.shape), self.device, self.dtype, original_repr(self))
 # torch.Tensor.__repr__ = lambda self: "<Tensor shape={}, device={}, dtype={}>".format(
 #     tuple(self.shape), self.device, self.dtype
-# )
+# )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e3a4c60
 
 
 def get_args():
@@ -33,7 +33,7 @@ def get_args():
 
     parser.add_argument("--model_type", type=str, default="ctrl")
 
-    parser.add_argument("--batch_size", type=int, default=128)
+    parser.add_argument("--batch_size", type=int, default=1024)
     parser.add_argument("--local_D", type=int, default=32)
     parser.add_argument("--global_D", type=int, default=40)
 
@@ -41,14 +41,14 @@ def get_args():
     parser.add_argument("--no_reload", dest="reload", action="store_false")
     parser.set_defaults(reload=False)
 
-    parser.add_argument("--feature_dim", type=int, default=8)
-    parser.add_argument("--entity_dim", type=int, default=8)
+    parser.add_argument("--feature_dim", type=int, default=16)
+    parser.add_argument("--entity_dim", type=int, default=16)
 
     parser.add_argument("--epochs", type=int, default=20)
-    parser.add_argument("--lr", type=float, default=6e-4)
+    parser.add_argument("--lr", type=float, default=1e-2)
     parser.add_argument("--seed", type=int, default=2024)
 
-    parser.add_argument("--cuda_id", type=int, default=7)
+    parser.add_argument("--cuda_id", type=int, default=2)
     parser.add_argument("--message", type=str, default="test")
 
     # parser.add_argument("--env", type=str, default="KuaiRand-1K")

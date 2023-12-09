@@ -100,7 +100,7 @@ class Trainer:
                     else:
                         lr = config.learning_rate
 
-                pbar.set_description(f"epoch {epoch + 1} iter {it}: train loss {loss.item():.5f}. lr {lr:e}")
+                pbar.set_description(f"epoch {epoch} iter {it}: train loss {loss.item():.5f}. lr {lr:e}")
 
         self.tokens = 0  # counter used for learning rate decay
         for epoch in range(config.max_epochs + 1):
