@@ -18,6 +18,8 @@ from trainer import Trainer, TrainerConfig
 
 # from starformer import Starformer, StarformerConfig
 
+
+# For vscode debug!!
 original_repr = torch.Tensor.__repr__
 torch.Tensor.__repr__ = lambda self: "<Tensor shape={}, device={}, dtype={}, value=\n{}>".format(tuple(self.shape), self.device, self.dtype, original_repr(self))
 # torch.Tensor.__repr__ = lambda self: "<Tensor shape={}, device={}, dtype={}>".format(

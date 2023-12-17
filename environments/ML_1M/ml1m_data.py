@@ -6,6 +6,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from numba import njit
 
+from environments.ML_1M import provide_MF_GroundTruth
 from environments.ML_1M.ml1m_env import ML1MEnv
 from environments.base_data import BaseData
 from inputs import SparseFeatP, DenseFeat
@@ -59,9 +60,12 @@ class ML1MData(BaseData):
         return user_features, item_features, reward_features
 
     @staticmethod
-    def get_completed_data():
+    def get_completed_data(device="cpu"):
         mat_path = os.path.join(DATAPATH, "rating_matrix.csv")
-        mat = np.loadtxt(mat_path, delimiter=",")
+        if os.path.exists(mat_path):
+            mat = np.loadtxt(mat_path, delimiter=",")
+        else:
+            mat = provide_MF_GroundTruth.main(device=device)
         
         mat[mat<0] = 0
         mat[mat > 5] = 5

@@ -223,7 +223,7 @@ def prepare_dataset(args):
     EnvClass = DataClass.get_env_class()
     env = EnvClass(df_seq_rewards, target_features=reward_features, pareto_reload=args.reload)
     env.compile_test(df_data, df_user, df_item)
-    mat = DataClass.get_completed_data()
+    mat = DataClass.get_completed_data(args.device)
 
     return train_dataset, test_dataset, env, mat
 

@@ -9,15 +9,16 @@
 如果下载到实验室服务器，不要下载在/home/你自己/目录下，这个目录不适合存放大文件，放不下项目数据。
 请用`df -h`查看磁盘空间，每个服务器都挂载了额外硬盘，一般在/data/你自己/, 如果/data/下没有“你自己”目录，请联系管理员创造一个。
 
-此时，在服务器上的/data/你自己/下，下载本库：
+此时，在服务器上的/data/你自己/下，下载本库，并进入本库的根目录中
 ```shell
 git clone https://github.com/chongminggao/CRL.git
+cd CRL
 ```
 
 #### 2. 进入CRL目录，下载数据集
 以下代码请逐行运行：
 ```shell
-cd CRL/environments/ML_1M
+cd environments/ML_1M
 mkdir "data"
 cd data
 wget http://files.grouplens.org/datasets/movielens/ml-1m.zip
