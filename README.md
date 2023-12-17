@@ -15,6 +15,7 @@ git clone https://github.com/chongminggao/CRL.git
 ```
 
 #### 2. 进入CRL目录，下载数据集
+以下代码请逐行运行：
 ```shell
 cd CRL/environments/ML_1M
 mkdir "data"

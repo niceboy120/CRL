@@ -27,3 +27,16 @@ temp.*
 *.inter
 *.item
 *.user
+*.dat
+
+environments/ML_1M/README
+environments/ML_1M/data/
+
+
+*.zip
+*.tar
+*.gz
+*.tgz
+*.rar
+*.7z
+

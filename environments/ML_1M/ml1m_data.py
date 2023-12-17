@@ -72,10 +72,15 @@ class ML1MData(BaseData):
     @staticmethod
     def load_user_feat():
         print("load user features")
-        filepath = os.path.join(DATAPATH, 'ml-1m.user')
-        df_user = pd.read_csv(filepath, sep="\t", header=0,
-                               names=["user_id", "age", "gender", "occupation", "zip_code"],
-                               dtype={0: int, 1: int, 2: str, 3: int, 4: str},)
+        # filepath = os.path.join(DATAPATH, 'ml-1m.user')
+        # df_user1 = pd.read_csv(filepath, sep="\t", header=0,
+        #                        names=["user_id", "age", "gender", "occupation", "zip_code"],
+        #                        dtype={0: int, 1: int, 2: str, 3: int, 4: str},)
+        filepath = os.path.join(DATAPATH, 'users.dat')
+        df_user = pd.read_csv(filepath, sep="::", header=None,
+                              names=["user_id", "gender", "age", "occupation", "zip_code"],
+                              dtype={0: int, 1: str, 2: int, 3: int, 4: str},
+                              engine="python",)
         df_user["zip_code"] = df_user["zip_code"].apply(lambda x: x.split("-")[0])
         
         age_range = [0, 18, 25, 35, 45, 50, 56]
@@ -96,13 +101,26 @@ class ML1MData(BaseData):
     @staticmethod
     def load_category(tag_label="tags"):
         
-        filepath = os.path.join(DATAPATH, 'ml-1m.item')
-        df_item = pd.read_csv(filepath, 
-                              sep="\t", 
-                              header=0,
-                              names=["item_id", "movie_title", "release_year", "genre"],
-                              dtype={0: int, 1: str, 2: int, 3: str},)
-        df_item["genre"] = df_item["genre"].apply(lambda x: x.split())
+        # filepath = os.path.join(DATAPATH, 'ml-1m.item')
+        # df_item1 = pd.read_csv(filepath,
+        #                       sep="\t",
+        #                       header=0,
+        #                       names=["item_id", "movie_title", "release_year", "genre"],
+        #                       dtype={0: int, 1: str, 2: int, 3: str},)
+        filepath = os.path.join(DATAPATH, 'movies.dat')
+        df_item = pd.read_csv(filepath,
+                              sep="::",
+                              header=None,
+                              names=["item_id", "movie_title and release_year", "genre"],
+                              engine="python",
+                              encoding="ISO-8859-1")  # 或尝试使用 encoding="Windows-1252"
+
+        df_item["movie_title"] = df_item["movie_title and release_year"].apply(lambda x: x[:-7])
+        df_item["release_year"] = df_item["movie_title and release_year"].apply(lambda x: x[-5:-1])
+        df_item["release_year"] = df_item["release_year"].apply(lambda x: int(x) if x.isdigit() else 0)
+        df_item.drop(columns=["movie_title and release_year"], inplace=True)
+
+        df_item["genre"] = df_item["genre"].apply(lambda x: x.split("|")) # using "|" to split the string
         df_item["num_genre"] = df_item["genre"].apply(lambda x: len(x))
 
         
@@ -142,12 +160,20 @@ class ML1MData(BaseData):
 
     @staticmethod
     def get_df_ml_1m(inter_path):
+        # df = pd.read_csv(
+        #     inter_path,
+        #     sep="\t",
+        #     header=0,
+        #     dtype={0: int, 1: int, 2: float, 3: int},
+        #     names=["user_id", "item_id", "rating", "timestamp"],
+        # )
         df = pd.read_csv(
-            inter_path,
-            sep="\t",
-            header=0,
+            os.path.join(DATAPATH, "ratings.dat"),
+            sep="::",
+            header=None,
             dtype={0: int, 1: int, 2: float, 3: int},
             names=["user_id", "item_id", "rating", "timestamp"],
+            engine="python",
         )
         print(df)
 
