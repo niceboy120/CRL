@@ -54,9 +54,10 @@ class ML1MData(BaseData):
         if not use_userinfo:
             user_features = ["user_id"]
         item_features = ["item_id", "rating"]
-        reward_features = ["novelty", "diversity", "sum_rating"]
+        # reward_features = ["novelty", "diversity", "sum_rating"] # Three metrics are hard to balance!
+        reward_features = ["sum_rating", "diversity"] # gcm1111
         return user_features, item_features, reward_features
-    
+
     @staticmethod
     def get_completed_data():
         mat_path = os.path.join(DATAPATH, "rating_matrix.csv")

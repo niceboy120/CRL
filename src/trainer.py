@@ -108,7 +108,6 @@ class Trainer:
             # eval_return, eval_std = self.get_returns(0) # for debug
             if epoch > 0:
                 run_epoch('train', epoch_num=epoch)
-
             res = self.collector.collect()
             logzero.logger.info(f"Epoch: [{epoch}], Info: [{res}]")
             if writer is not None:
@@ -116,8 +115,8 @@ class Trainer:
                     writer.add_scalar(key, value, epoch)
 
     def test(self):
-
         self.model.train(False)
+
 
     def get_returns(self, ret):
         self.model.train(False)

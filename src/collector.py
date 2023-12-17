@@ -5,6 +5,7 @@ from tqdm import tqdm
 
 # from buffer import ReplayBuffer
 import sys
+import logzero
 
 sys.path.extend(["./src/data_structure"])
 
@@ -36,6 +37,7 @@ class Collector:
 
         self.target_pareto_index = target_pareto_index
         self.target_pareto = self.env.pareto_front[target_pareto_index]
+        logzero.logger.info(f"pareto front: index: {target_pareto_index}, front: [{self.target_pareto}]")
 
         indices = np.array(self.test_dataset.session_start_id_list)
 
@@ -47,8 +49,7 @@ class Collector:
         # for idx_k, idx in tqdm(enumerate(indices), total=len(indices), desc="compiling test dataset"):
         for idx_k, idx in enumerate(indices):
             (x, seq, y, len_data) = self.test_dataset.__getitem__(idx)
-            x[:len_data,
-            self.test_dataset.user_index + 1:] = self.target_pareto  # Todo: note user_index=1 is the start index of target!
+            x[:len_data, self.test_dataset.user_index + 1:] = self.target_pareto  # Todo: note user_index=1 is the start index of target!
             x_batch[idx_k] = x[:len_data, :]
             seq_batch[idx_k] = seq[:len_data, :, :]
             y_batch[idx_k] = y[:len_data, :]
@@ -117,7 +118,7 @@ class Collector:
 
             df_item_new = self.test_dataset.df_item.loc[y_pred].reset_index(drop=False)
             item_new = df_item_new[[col.name for col in self.test_dataset.seq_columns[:-1]]].to_numpy() # TODO: note that the last index (-1) indicates the rating column!
-            item_reward = np.concatenate([item_new, rewards], axis=-1)
+            item_reward = np.concatenate([item_new, rewards], axis=-1) # Todo: note that the last index (-1) indicates the rating column!
 
             # Update buffer:
             x_batch_new = x_batch[:, -1:, :].copy()

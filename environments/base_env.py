@@ -1,5 +1,7 @@
 import os
 import pickle
+
+import logzero
 import numpy as np
 
 import pandas as pd
@@ -49,7 +51,7 @@ class BaseEnv:
             with open(raw_pareto_front_filepath, "wb") as f:
                 pickle.dump(self.pareto_front, f)
 
-            # return self.raw_pareto_front
+        logzero.logger.info(f"All Pareto Fronts for Env are: {self.pareto_front}")
 
     def reset(self, ):
         pass
