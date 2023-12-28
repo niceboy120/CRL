@@ -7,8 +7,8 @@ import matplotlib.pyplot as plt
 from numba import njit
 
 from inputs import SparseFeatP
-from ..utils import get_novelty, get_serendipity, get_diversiy
-from ..base_env import BaseEnv
+from environments.utils import get_novelty, get_serendipity, get_diversiy
+from environments.base_env import BaseEnv
 
 
 ENVPATH = os.path.dirname(__file__)
@@ -16,7 +16,7 @@ DATAPATH = os.path.join(ENVPATH, "data")
 FIGPATH = os.path.join(ENVPATH, "figs")
 RESULTPATH = os.path.join(ENVPATH, "data_processed")
 
-class ML1MEnv(BaseEnv):
+class KuaiRandPureEnv(BaseEnv):
     def __init__(self, *args, **kwargs):
         self.RESULTPATH = RESULTPATH
         self.FIGPATH = FIGPATH
@@ -24,19 +24,10 @@ class ML1MEnv(BaseEnv):
 
         super().__init__(*args, **kwargs)
 
-        # self.item_col = [col.name for col in self.seq_columns].index("item_id")
-        # self.rating_col = [col.name for col in self.seq_columns].index("rating")
-        # self.item_col = 0
-        # assert self.seq_columns[self.item_col].name == "item_id"
-        # self.rating_col = -1
-        # assert self.seq_columns[self.rating_col].name == "rating"
-
-
-
     def step(self, buffer, eval_round):
         batch, indices = buffer.sample(0)
-        # (x_batch, seq_batch, y_batch, len_data_batch) = batch.x_batch, batch.seq_batch, batch.y_batch, batch.len_data_batch
         seq_batch = batch.seq_batch
+
         # x_batch = x_batch.reshape(buffer.buffer_num, -1, *x_batch.shape[2:])
         seq_batch = seq_batch.reshape(buffer.buffer_num, -1, *seq_batch.shape[2:])
         # y_batch = y_batch.reshape(buffer.buffer_num, -1, *y_batch.shape[2:])

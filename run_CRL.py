@@ -30,6 +30,7 @@ torch.Tensor.__repr__ = lambda self: "<Tensor shape={}, device={}, dtype={}, val
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--env", type=str, default="ml-1m")
+    # parser.add_argument("--env", type=str, default="zhihu-1m")
     parser.add_argument("--max_item_list_len", type=int, default=30)
     parser.add_argument("--len_reward_to_go", type=int, default=10)
 
@@ -38,6 +39,7 @@ def get_args():
     parser.add_argument("--batch_size", type=int, default=1024)
     parser.add_argument("--local_D", type=int, default=32)
     parser.add_argument("--global_D", type=int, default=40)
+    parser.add_argument("--n_layer", type=int, default=6)
 
     parser.add_argument("--is_reload", dest="reload", action="store_true")
     parser.add_argument("--no_reload", dest="reload", action="store_false")
@@ -57,7 +59,7 @@ def get_args():
     args = parser.parse_known_args()[0]
     # args = parser.parse_args()
 
-    if args.env not in ["ml-1m", "KuaiRand-1K"]:
+    if args.env not in ["ml-1m", "KuaiRand-Pure", "Zhihu-1M"]:
         parser.print_help()
         sys.exit(1)
     
@@ -72,7 +74,6 @@ def get_args():
 
 
 def main(args):
-    DATAPATH = get_datapath(args.env)
     args = get_common_args(args)
     log_config(args)
 
@@ -80,10 +81,10 @@ def main(args):
     # get model
     mconf = CTRLConfig(
         train_dataset.num_items, pos_drop=0.1, resid_drop=0.1, 
-        local_num_feat=len(train_dataset.x_columns) + 1,  # 1 dim for the sequence embedding
-        x_columns=train_dataset.x_columns, seq_columns=train_dataset.seq_columns, y_column=train_dataset.y_column, 
+        local_num_feat=len(train_dataset.reward_columns) + 2,  # 1 dim for the sequence embedding and 1 dim for the user embedding
+        x_columns=train_dataset.x_columns,  reward_columns=train_dataset.reward_columns, seq_columns=train_dataset.seq_columns, y_column=train_dataset.y_column,
         model_type=args.model_type, N_head=8, global_D=args.global_D, local_N_head=4, local_D=args.local_D, 
-        n_layer=6, max_seqlens=args.max_item_list_len - args.len_reward_to_go, gru_layers=1, hidden_size=args.local_D, device=args.device,
+        n_layer=args.n_layer, max_seqlens=args.max_item_list_len - args.len_reward_to_go, gru_layers=1, hidden_size=args.local_D, device=args.device,
     )
     model = CTRL(mconf).to(args.device)
 
@@ -96,8 +97,7 @@ def main(args):
         args=args,
     )
 
-    collector = Collector(env, model, test_dataset, mat)
-    collector.compile(test_seq_length=args.len_reward_to_go)
+    collector = Collector(env, model, test_dataset, mat, args.len_reward_to_go)
     
     trainer = Trainer(model, collector, train_dataset, test_dataset, tconf)
     trainer.train()

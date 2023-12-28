@@ -142,10 +142,16 @@ class PatchEmb(nn.Module):
         self.max_seqlens = config.max_seqlens
 
         self.sequence_embedding = nn.GRU(
-            input_size=compute_input_dim(self.config.seq_columns),
+            input_size=compute_input_dim(config.seq_columns),
             hidden_size=config.hidden_size,
             num_layers=config.gru_layers,
             batch_first=True
+        )
+
+        self.user_encoder = nn.Sequential(
+            nn.Linear(compute_input_dim(config.x_columns), 64),
+            nn.ReLU(),
+            nn.Linear(64, config.hidden_size)
         )
 
         # self.patch_embedding = nn.Sequential(
@@ -159,10 +165,12 @@ class PatchEmb(nn.Module):
         #     # +1 for mask
         #     self.action_emb = nn.Embedding(config.num_item+1, iD)
 
-        self.features_embedding = create_embedding_matrix(config.x_columns, init_std=0.0001, linear=False, sparse=False, device='cpu')
+        self.feature_embedding = create_embedding_matrix(config.x_columns, init_std=0.0001, linear=False, sparse=False, device='cpu')
+        self.reward_embedding = create_embedding_matrix(config.reward_columns, init_std=0.0001, linear=False, sparse=False, device='cpu')
         self.seq_embedding = create_embedding_matrix(config.seq_columns, init_std=0.0001, linear=False, sparse=False, device='cpu')
 
         self.feature_index = build_input_features(config.x_columns)
+        self.reward_index = build_input_features(config.reward_columns)
         self.seq_index = build_input_features(config.seq_columns)
         
         self.global_proj = nn.Sequential(nn.Linear(config.local_D, config.global_D), # +1 for action token
@@ -180,14 +188,16 @@ class PatchEmb(nn.Module):
     def no_weight_decay(self):
         return {'spatial_emb', 'temporal_emb'}
     
-    def forward(self, x, seq):
+    def forward(self, x, reward, seq):
         # B, T, C, H, W = x.size()
         # local_state_tokens = (self.sequence_embedding(x) + self.spatial_emb).reshape(B, T, -1, self.config.local_D)
         
         num_batch, len_data, num_features = x.shape
+        num_batch, len_data, num_rewards = reward.shape
         num_batch, len_data, num_seq_features, len_state = seq.shape
 
-        x_values = input_from_feature_columns(x.reshape(-1, num_features), self.config.x_columns, self.features_embedding, self.feature_index, support_dense=True, device=x.device)
+        x_values = input_from_feature_columns(x.reshape(-1, num_features), self.config.x_columns, self.feature_embedding, self.feature_index, support_dense=True, device=x.device)
+        reward_values = input_from_feature_columns(reward.reshape(-1, num_rewards), self.config.reward_columns, self.reward_embedding, self.reward_index, support_dense=True, device=x.device)
         seq_values = input_from_feature_columns(seq.reshape(-1, num_seq_features, len_state), self.config.seq_columns, self.seq_embedding, self.seq_index, support_dense=True, device=x.device)
 
         # from einops.layers.torch import Rearrange
@@ -196,21 +206,23 @@ class PatchEmb(nn.Module):
         # seq_tensor = combined_dnn_input(seq_values, [])
 
         x_tensor = torch.cat(x_values, dim=1).reshape(num_batch, len_data, num_features, -1)
+        reward_tensor = torch.cat(reward_values, dim=1).reshape(num_batch, len_data, num_rewards, -1)
         seq_tensor = torch.cat(seq_values, dim=-1).squeeze(1)
+
 
         output, hn = self.sequence_embedding(seq_tensor)
         # seq_tensor.detach().cpu().numpy()[:,-1,0]
+
+        user_representation = self.user_encoder(x_tensor)
         
         seq_output = hn[-1].reshape(num_batch, len_data, -1).unsqueeze(2)
-        
-        local_tokens = torch.cat([x_tensor, seq_output], dim=2)
+        # seq_output = output[:, -1].reshape(num_batch, len_data, -1).unsqueeze(2)
+
+        local_tokens = torch.cat([user_representation, reward_tensor, seq_output], dim=2)
 
         global_tokens = self.global_proj(seq_output.squeeze(2))
 
         return local_tokens, global_tokens, self.temporal_emb[:, :len_data]
-
-
-        
 
 
         # if 'xconv' in self.config.model_type or 'stack' in self.config.model_type:
@@ -335,10 +347,10 @@ class CTRL(nn.Module):
             return F.cross_entropy(pred.reshape(-1, pred.size(-1)), target.reshape(-1).long(), reduction='none')    
 
     
-    def forward(self, x, seq, targets, len_data):
+    def forward(self, x, reward, seq, targets, len_data):
         # actions should be already padded by dataloader
 
-        local_tokens, global_state_tokens, temporal_emb = self.token_emb(x, seq)
+        local_tokens, global_state_tokens, temporal_emb = self.token_emb(x, reward, seq)
         local_tokens = self.local_pos_drop(local_tokens)
         if ('xconv' not in self.config.model_type) and ('stack' not in self.config.model_type):
             global_state_tokens = self.global_pos_drop(global_state_tokens)

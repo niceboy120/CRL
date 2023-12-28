@@ -113,27 +113,6 @@ def varlen_embedding_lookup(X, embedding_dict, sequence_input_dict, varlen_spars
     return varlen_embedding_vec_dict
 
 
-def get_dataset_columns(dim_user, dim_action, num_user, num_action, envname="VirtualTB-v0"):
-    user_columns, action_columns, feedback_columns = [], [], []
-    has_user_embedding, has_action_embedding, has_feedback_embedding = None, None, None
-    if envname == "VirtualTB-v0":
-        user_columns = [DenseFeat("feat_user", 88)]
-        action_columns = [DenseFeat("feat_item", 27)]
-        # feedback_columns = [SparseFeat("feat_feedback", 11, embedding_dim=27)]
-        feedback_columns = [DenseFeat("feat_feedback", 1)]
-        has_user_embedding = True
-        has_action_embedding = True
-        has_feedback_embedding = True
-    else: # for kuairecenv, coat
-        user_columns = [SparseFeatP("feat_user", num_user, embedding_dim=dim_user)]
-        action_columns = [SparseFeatP("feat_item", num_action, embedding_dim=dim_action)]
-        feedback_columns = [DenseFeat("feat_feedback", 1)]
-        has_user_embedding = False
-        has_action_embedding = False
-        has_feedback_embedding = True
-
-    return user_columns, action_columns, feedback_columns, \
-           has_user_embedding, has_action_embedding, has_feedback_embedding
 
 
 def embedding_lookup(X, sparse_embedding_dict, sparse_input_dict, sparse_feature_columns, return_feat_list=(),

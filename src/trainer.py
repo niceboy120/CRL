@@ -64,16 +64,17 @@ class Trainer:
             data_len = len(loader)
             pbar = tqdm(enumerate(loader), total=data_len) if is_train else enumerate(loader)
 
-            for it, (x, seq, y, len_data) in pbar:
+            for it, (x, reward, seq, y, len_data) in pbar:
                 x = x.to(self.device)  # states
-                seq = seq.to(self.device)  # action
-                y = y.to(self.device)  # reward
+                reward = reward.to(self.device)  # desired reward info
+                seq = seq.to(self.device)  # sequence data
+                y = y.to(self.device)  # next target
                 len_data = len_data.to(self.device)
 
                 # forward the model
                 with torch.set_grad_enabled(is_train):
 
-                    act_logit, atts, loss = model(x, seq, targets=y, len_data=len_data)
+                    act_logit, atts, loss = model(x, reward, seq, targets=y, len_data=len_data)
                     # loss = loss.mean()  # collapse all losses if they are scattered on multiple gpus
 
                     if is_train:
@@ -117,105 +118,6 @@ class Trainer:
     def test(self):
         self.model.train(False)
 
-
-    def get_returns(self, ret):
-        self.model.train(False)
-
-        dataset = self.test_dataset
-        loader = DataLoader(dataset, shuffle=True, pin_memory=True,
-                            batch_size=1000,  # self.config.batch_size,
-                            num_workers=self.config.num_workers)
-
-        losses = []
-        data_len = len(loader)
-
-        pbar = tqdm(enumerate(loader), total=data_len)  # if is_train else enumerate(loader)
-
-        for it, (x, seq, y, len_data) in pbar:
-            x = x.to(self.device)  # states
-            seq = seq.to(self.device)  # action
-            y = y.to(self.device)  # reward
-            len_data = len_data.to(self.device)
-
-            # forward the model
-            with torch.set_grad_enabled(False):
-                # self.env.reset(x, y, len_data)
-
-                act_logit, atts, loss = self.model(x, seq, targets=y, len_data=len_data)
-
-        # envargs = EnvArgs(self.config.game.lower(), self.config.seed, self.config.img_size[-2:])
-        # env = Env(envargs)
-        # env.eval()
-
-        T_rewards, T_Qs = [], []
-        done = True
-        for i in range(10):
-            # state = env.reset()
-            all_states = state.type(torch.float32).to(self.device).unsqueeze(0).unsqueeze(0)
-            rtgs = [ret]
-            rewards = []
-            actions = []
-
-            # padding
-            actions += [self.config.num_items]
-            rewards += [0]
-            # sampled_action = sample(self.model.module, all_states, sample=True,
-            #                                   actions=torch.tensor(actions, dtype=torch.long).to(self.device).unsqueeze(1).unsqueeze(0),
-            #                                   rewards=torch.tensor(rewards, dtype=torch.float32).to(self.device).unsqueeze(1).unsqueeze(0) if 'rtg' not in self.config.model_type else torch.tensor(rtgs, dtype=torch.float32).to(self.device).unsqueeze(1).unsqueeze(0))
-            sampled_action = sample(self.model, all_states, sample=True,
-                                    actions=torch.tensor(actions, dtype=torch.long).to(self.device).unsqueeze(1).unsqueeze(0),
-                                    rewards=torch.tensor(rewards, dtype=torch.float32).to(self.device).unsqueeze(1).unsqueeze(0) if 'rtg' not in self.config.model_type else torch.tensor(rtgs,
-                                                                                                                 dtype=torch.float32).to(
-                                        self.device).unsqueeze(1).unsqueeze(0))
-            j = 0
-            while True:
-                if done:
-                    state, reward_sum, done, prev_attn = env.reset(), 0, False, None
-                    all_states = state.type(torch.float32).to(self.device).unsqueeze(0).unsqueeze(0)
-                    actions = []
-                    rewards = []
-                    rtgs = [ret]
-
-                    # padding
-                    actions += [self.config.num_items]
-                    rewards += [0]
-
-                # take a step
-                action = sampled_action.cpu().numpy()[0, -1]
-                actions += [sampled_action]
-                state, reward, done = env.step(action)
-                rewards += [reward]
-                reward_sum += reward
-                state = state.unsqueeze(0).to(self.device)
-                rtgs += [rtgs[-1] - reward]
-
-                # trunk trajectory
-                all_states = torch.cat([all_states, state.unsqueeze(0)], dim=1)
-                if all_states.size(1) > self.config.maxT:
-                    all_states = all_states[:, -self.config.maxT:]
-                    actions = actions[-self.config.maxT:]
-                    rewards = rewards[-self.config.maxT:]
-                    rtgs = rtgs[-self.config.maxT:]
-                j += 1
-
-                if done:
-                    T_rewards.append(reward_sum)
-                    break
-
-                sampled_action = sample(self.model, all_states, sample=True,
-                                        actions=torch.tensor(actions, dtype=torch.long).to(self.device).unsqueeze(
-                                            1).unsqueeze(0),
-                                        rewards=torch.tensor(rewards, dtype=torch.float32).to(self.device).unsqueeze(
-                                            1).unsqueeze(0) if 'rtg' not in self.config.model_type else torch.tensor(
-                                            rtgs, dtype=torch.float32).to(self.device).unsqueeze(1).unsqueeze(0))
-
-        env.close()
-        eval_return = sum(T_rewards) / 10.
-        eval_std = np.std(T_rewards)
-        print("eval return: %d, eval std: %f" % (eval_return, eval_std))
-
-        self.model.train(True)
-        return eval_return, eval_std
 
 
 def top_k_logits(logits, k):

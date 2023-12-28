@@ -14,18 +14,17 @@ from buffer_manager import VectorReplayBuffer
 
 
 class Collector:
-    def __init__(self, env, policy, test_dataset, mat, buffer_length=20) -> None:
+    def __init__(self, env, policy, test_dataset, mat, test_seq_length, buffer_length=20) -> None:
         self.env = env
         self.policy = policy
         self.test_dataset = test_dataset
         self.mat = mat
         self.buffer_length = buffer_length
-
-    def compile(self, test_seq_length, target_pareto_index=None):
-
         self.test_seq_length = test_seq_length
         if self.test_seq_length > self.buffer_length:
             self.buffer_length = self.test_seq_length
+
+    def compile(self, target_pareto_index=None):
 
         save_size = len(self.test_dataset.session_start_id_list) * self.buffer_length
         num_buffer = len(self.test_dataset.session_start_id_list)
@@ -42,41 +41,36 @@ class Collector:
         indices = np.array(self.test_dataset.session_start_id_list)
 
         x_batch = np.zeros((len(indices), 1, self.test_dataset.x_numpy.shape[-1]))
+        reward_batch = np.zeros((len(indices), 1, self.test_dataset.reward_numpy.shape[-1]))
         seq_batch = np.zeros((len(indices), 1, *self.test_dataset.seq_numpy.shape[-2:]))
         y_batch = np.zeros((len(indices), 1, self.test_dataset.y_numpy.shape[-1]))
         len_data_batch = np.zeros(len(indices))
 
-        # for idx_k, idx in tqdm(enumerate(indices), total=len(indices), desc="compiling test dataset"):
+        ## Put one batch in the buffer, and set the reward to the target pareto front!
         for idx_k, idx in enumerate(indices):
-            (x, seq, y, len_data) = self.test_dataset.__getitem__(idx)
-            x[:len_data, self.test_dataset.user_index + 1:] = self.target_pareto  # Todo: note user_index=1 is the start index of target!
+            (x, rewards, seq, y, len_data) = self.test_dataset.__getitem__(idx)
+            rewards[:len_data] = self.target_pareto
             x_batch[idx_k] = x[:len_data, :]
+            reward_batch[idx_k] = rewards[:len_data, :]
             seq_batch[idx_k] = seq[:len_data, :, :]
             y_batch[idx_k] = y[:len_data, :]
             len_data_batch[idx_k] = len_data
 
-        batch = Batch(x_batch=x_batch, seq_batch=seq_batch, y_batch=y_batch, len_data_batch=len_data_batch)
-        # batch = Batch(obs=obs, obs_next=np_ui_pair, act=items, is_start=is_starts,
-        #               policy={}, info={}, rew=rewards, rew_prev=rew_prevs, terminated=terminateds, truncated=truncateds)
-
+        batch = Batch(x_batch=x_batch, reward_batch=reward_batch, seq_batch=seq_batch, y_batch=y_batch, len_data_batch=len_data_batch)
         ptrs = self.buffer.add(batch)
 
     def collect(self, batch_size=1000, num_workers=4):
 
-        # self.loader = DataLoader(self.test_dataset, shuffle=False, pin_memory=True,
-        #                          batch_size=batch_size, num_workers=num_workers)
         self.policy.eval()
-
-        # self.buffer[0]
-        # batch, index = self.buffer.sample(0)
+        self.compile()
 
         for round in tqdm(range(self.test_seq_length), total=self.test_seq_length, desc="collecting test dataset"):
-            # batch = self.buffer[self.buffer.last_index]
             batch, indices = self.buffer.sample(0)
 
-            (x_batch, seq_batch, y_batch, len_data_batch) = batch.x_batch, batch.seq_batch, batch.y_batch, batch.len_data_batch
+            (x_batch, reward_batch, seq_batch, y_batch, len_data_batch) = batch.x_batch, batch.reward_batch, batch.seq_batch, batch.y_batch, batch.len_data_batch
 
             x_batch = x_batch.reshape(self.buffer.buffer_num, -1, x_batch.shape[-1])
+            reward_batch = reward_batch.reshape(self.buffer.buffer_num, -1, reward_batch.shape[-1])
             seq_batch = seq_batch.reshape(self.buffer.buffer_num, -1, *seq_batch.shape[-2:])
             y_batch = y_batch.reshape(self.buffer.buffer_num, -1, y_batch.shape[-1])
             len_data_batch = len_data_batch.reshape(self.buffer.buffer_num, -1)[:, -1]
@@ -86,23 +80,25 @@ class Collector:
             assert all(len_data_batch == len_data_batch[0])
             # len_all = len_data_batch[0].astype(int)
             x_batch_tensor = torch.from_numpy(x_batch).float()
+            reward_batch_tensor = torch.from_numpy(reward_batch).float()
             seq_batch_tensor = torch.from_numpy(seq_batch).float()
             y_batch_tensor = torch.from_numpy(y_batch).int()
             len_data_batch_tensor = torch.from_numpy(len_data_batch).long()
 
-            dataset = torch.utils.data.TensorDataset(x_batch_tensor, seq_batch_tensor, y_batch_tensor,
-                                                     len_data_batch_tensor)
-            dataloader = DataLoader(dataset, batch_size=128, shuffle=False, num_workers=num_workers)
+            dataset = torch.utils.data.TensorDataset(
+                x_batch_tensor, reward_batch_tensor, seq_batch_tensor, y_batch_tensor, len_data_batch_tensor)
+            dataloader = DataLoader(dataset, batch_size=256, shuffle=False, num_workers=num_workers)
 
             act_logit_list = []
             with torch.no_grad():
-                for (x, seq, y, len_data) in dataloader:
+                for (x, reward, seq, y, len_data) in dataloader:
                     x = x.to(self.policy.device)
+                    reward = reward.to(self.policy.device)
                     seq = seq.to(self.policy.device)
                     y = y.to(self.policy.device)
                     len_data = len_data.to(self.policy.device)
 
-                    act_logit, atts, loss = self.policy(x, seq, targets=None, len_data=len_data)
+                    act_logit, atts, loss = self.policy(x, reward, seq, targets=None, len_data=len_data)
                     act_logit_list.append(act_logit)
 
             y_logits = torch.cat(act_logit_list, dim=0)
@@ -113,19 +109,20 @@ class Collector:
 
             # Obtain reward:
             user_id = x_batch[:, round, self.test_dataset.user_index].astype(int)
-            rewards = self.mat[user_id, y_pred].reshape(-1, 1)
+            feedback = self.mat[user_id, y_pred].reshape(-1, 1)
 
 
             df_item_new = self.test_dataset.df_item.loc[y_pred].reset_index(drop=False)
             item_new = df_item_new[[col.name for col in self.test_dataset.seq_columns[:-1]]].to_numpy() # TODO: note that the last index (-1) indicates the rating column!
-            item_reward = np.concatenate([item_new, rewards], axis=-1) # Todo: note that the last index (-1) indicates the rating column!
+            item_feedback = np.concatenate([item_new, feedback], axis=-1) # Todo: note that the last index (-1) indicates the rating column!
 
             # Update buffer:
             x_batch_new = x_batch[:, -1:, :].copy()
+            reward_batch_new = reward_batch[:, -1:, :].copy()
 
             seq_batch_new = seq_batch[:, -1:, :, :].copy()
             seq_batch_new[:, :, :, :-1] = seq_batch_new[:, :, :, 1:]
-            seq_batch_new[:, -1, :, -1] = item_reward
+            seq_batch_new[:, -1, :, -1] = item_feedback
 
             y_batch_new = y_batch[:, -1:, :].copy()
             y_batch_new[:, -1, :] = self.test_dataset.y_numpy[

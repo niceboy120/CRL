@@ -11,6 +11,7 @@ import numpy as np
 # Load the Movielens ratings data
 CODEPATH = os.path.dirname(__file__)
 DATAPATH = os.path.join(CODEPATH, "data")
+RESULTPATH = os.path.join(CODEPATH, "data_processed")
 # device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
@@ -137,10 +138,11 @@ def main(device="cpu"):
     rating_matrix = all_predictions.view(num_users - 1, num_movies - 1).cpu().numpy()
 
     # Save the rating matrix to a file
-    rating_matrix_save_path = os.path.join(DATAPATH, 'rating_matrix.csv')
+    rating_matrix_save_path = os.path.join(RESULTPATH, 'rating_matrix.csv')
     np.savetxt(rating_matrix_save_path, rating_matrix, delimiter=',')
     return rating_matrix
 
 
 if __name__ == "__main__":
-    main()
+    device = 'cuda:7' if torch.cuda.is_available() else 'cpu'
+    main(device)

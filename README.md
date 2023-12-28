@@ -1,8 +1,7 @@
 # Controllable Decision Transformer for Recommendation
 
-现已可在Movielens-1M数据集上运行。
+现已可在Movielens-1M、KuaiRand_Pure、Zhihu1M数据集上运行。
 步骤如下：
-
 
 
 #### 1. 将本库下载到本地
@@ -18,13 +17,9 @@ cd CRL
 #### 2. 进入CRL目录，下载数据集
 以下代码请逐行运行：
 ```shell
-cd environments/ML_1M
-mkdir "data"
-cd data
-wget http://files.grouplens.org/datasets/movielens/ml-1m.zip
-unzip ml-1m.zip
-mv ml-1m/* .
-cd ../../.. # return to CRL directory
+wget https://nas.chongminggao.top:4430/datasets/CRL/environments.zip --no-check-certificate
+unzip environments.zip
+rm environments.zip
 ```
 
 #### 3. 安装相应的环境：
@@ -40,10 +35,13 @@ sh install.sh  # 清华源加速
 
 #### 4. 运行
 ```shell
-python run_CRL.py
+python run_CRL.py --env ml-1m  # run ML-1M dataset (default)
+python run_CRL.py --env Zhihu-1M  # run Zhihu-1M dataset
+python run_CRL.py --env KuaiRand-Pure  # run KuaiRand-Pure dataset
 ```
 说明：
-现在的run_CRL的参数是对于ML-1M数据集的，如果要运行其他数据集，需要修改run_CRL.py中的参数。
+首次运行时，会计算并存储一些文件，比如调用DeepCTR的库填补出所有一个groundtruth矩阵，即所有用户对所有商品的评分。这个过程稍慢一些。之后运行就会变快。
+
 我写的比较结构化，借鉴了DeepCTR库中的feature_column的设计，以及tianshou库中的buffer设计。都已经自我包含了（不需要额外下载其他库），需要先读懂整个逻辑。
 评估与训练是交替进行的。
 

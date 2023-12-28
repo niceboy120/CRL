@@ -13,8 +13,13 @@ from .get_pareto_front import get_kde_density, get_pareto_front
 
 
 class BaseEnv:
-    def __init__(self, df_seq_rewards, target_features, bin=100, percentile=90, pareto_reload=False):
+    def __init__(self, df_seq_rewards, target_features, seq_columns, bin=100, percentile=90, pareto_reload=False):
 
+        features = [col.name for col in seq_columns]
+        self.item_col = features.index("item_id")
+        self.rating_col = features.index("rating")
+
+        self.seq_columns = seq_columns
         self.target_features = target_features
         pareto_front_path = f"pareto_front_bin{bin}_per{percentile}_({','.join(target_features)}).pkl"
         raw_pareto_front_path = f"raw_pareto_front_bin{bin}_per{percentile}_({','.join(target_features)}).pkl"
@@ -56,6 +61,6 @@ class BaseEnv:
     def reset(self, ):
         pass
 
-    def step(self, buffer):
+    def step(self, buffer, eval_round):
         pass
         
