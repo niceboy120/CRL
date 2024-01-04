@@ -18,6 +18,7 @@ class BaseEnv:
         features = [col.name for col in seq_columns]
         self.item_col = features.index("item_id")
         self.rating_col = features.index("rating")
+        self.item_padding_id = None
 
         self.seq_columns = seq_columns
         self.target_features = target_features

@@ -237,7 +237,7 @@ class PatchEmb(nn.Module):
         # else:
         #     local_tokens = torch.cat((local_action_tokens, local_state_tokens), dim=2)
 
-        return local_tokens, global_state_tokens, self.temporal_emb[:, :T]
+        # return local_tokens, global_state_tokens, self.temporal_emb[:, :T]
 
 class CTRL(nn.Module):
     

@@ -24,6 +24,8 @@ class ML1MEnv(BaseEnv):
 
         super().__init__(*args, **kwargs)
 
+        self.item_padding_id = 0
+
         # self.item_col = [col.name for col in self.seq_columns].index("item_id")
         # self.rating_col = [col.name for col in self.seq_columns].index("rating")
         # self.item_col = 0

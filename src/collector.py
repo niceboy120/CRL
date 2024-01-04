@@ -103,18 +103,20 @@ class Collector:
 
             y_logits = torch.cat(act_logit_list, dim=0)
 
+            logit_mask = get_logit_mask(y_logits, self.buffer, indices, self.env.item_col, self.env.item_padding_id)
+            y_logits_masked = y_logits * logit_mask
+
             # Greedy action:
-            y_pred = torch.argmax(y_logits, dim=-1).cpu().numpy()
-            y_pred[y_pred == 0] = np.random.randint(1, self.test_dataset.num_items, size=(y_pred == 0).sum()) # todo: for movielens-1m
+            y_pred = torch.argmax(y_logits_masked, dim=-1).cpu().numpy()
+
 
             # Obtain reward:
             user_id = x_batch[:, round, self.test_dataset.user_index].astype(int)
             feedback = self.mat[user_id, y_pred].reshape(-1, 1)
 
-
             df_item_new = self.test_dataset.df_item.loc[y_pred].reset_index(drop=False)
-            item_new = df_item_new[[col.name for col in self.test_dataset.seq_columns[:-1]]].to_numpy() # TODO: note that the last index (-1) indicates the rating column!
-            item_feedback = np.concatenate([item_new, feedback], axis=-1) # Todo: note that the last index (-1) indicates the rating column!
+            item_new = df_item_new[[col.name for col in self.test_dataset.seq_columns[:-1]]].to_numpy() # TODO: note that the last index (-1) indicates the user feedback!
+            item_feedback = np.concatenate([item_new, feedback], axis=-1) # Todo: note that the last index (-1) indicates the user feedback!
 
             # Update buffer:
             x_batch_new = x_batch[:, -1:, :].copy()
@@ -144,3 +146,20 @@ class Collector:
 
 
         # self.test_dataset.seq_numpy[60400, 0]
+
+def get_rec_ids(buffer, indices, item_col):
+    if len(buffer) == 0:
+        rec_id = None
+    else:
+        rec_ids = buffer.seq_batch[indices][:, :,item_col].reshape(buffer.buffer_num, -1)
+    return rec_ids
+
+def get_logit_mask(y_logits, buffer, indices, item_col, item_padding_id):
+    logit_mask = torch.ones_like(y_logits, dtype=torch.bool).to(device=y_logits.device)
+    rec_ids = get_rec_ids(buffer, indices, item_col)
+    rec_ids_torch = torch.LongTensor(rec_ids).to(device=y_logits.device)
+    logit_mask = logit_mask.scatter(1, rec_ids_torch, 0)
+    if item_padding_id is not None:
+        logit_mask[:, item_padding_id] = False  # todo: for movielens-1m
+
+    return logit_mask
