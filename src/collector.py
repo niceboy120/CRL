@@ -104,7 +104,8 @@ class Collector:
             y_logits = torch.cat(act_logit_list, dim=0)
 
             logit_mask = get_logit_mask(y_logits, self.buffer, indices, self.env.item_col, self.env.item_padding_id)
-            y_logits_masked = y_logits * logit_mask
+            # y_logits_masked = y_logits * logit_mask
+            y_logits_masked = torch.where(logit_mask == 0, torch.full_like(y_logits, float('-inf')), y_logits)
 
             # Greedy action:
             y_pred = torch.argmax(y_logits_masked, dim=-1).cpu().numpy()
@@ -160,6 +161,6 @@ def get_logit_mask(y_logits, buffer, indices, item_col, item_padding_id):
     rec_ids_torch = torch.LongTensor(rec_ids).to(device=y_logits.device)
     logit_mask = logit_mask.scatter(1, rec_ids_torch, 0)
     if item_padding_id is not None:
-        logit_mask[:, item_padding_id] = False  # todo: for movielens-1m
+        logit_mask[:, item_padding_id] = 0  # todo: for movielens-1m
 
     return logit_mask
