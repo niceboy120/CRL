@@ -125,6 +125,30 @@ class Zhihu1MData(BaseData):
 
         return df
 
+
+    @staticmethod
+    def data_augment(df_data, k=1):
+        from tqdm import tqdm
+        if k <= 0:
+            return df_data
+        all_user_id = df_data['user_id'].unique()
+        auxiliary_data = []
+        for uid in tqdm(all_user_id, desc="Iterating for augmentation"):
+            user_interactions = df_data[df_data['user_id'] == uid]
+            user_item_num = len(user_interactions)
+            sampled = user_interactions.sample(n=int(user_item_num*k), replace=True, random_state=42)
+            # set sampled's timestamp to 0 (so that it will always appears before real interactions)
+            sampled['impression timestamp'] = 0
+            sampled['date'] = pd.to_datetime(sampled['impression timestamp'], unit='s')
+            sampled['day'] = sampled['date'].dt.date
+            auxiliary_data.append(sampled)
+        auxiliary_df = pd.concat(auxiliary_data)
+        # add to original data
+        augmented_df = pd.concat([df_data, auxiliary_df])
+        augmented_df.sort_values(by=["user_id", "impression timestamp"], ascending=True, inplace=True)
+        return augmented_df
+
+
     def get_data(self, reserved_items=5000, reserved_users=10000):
 
         df = Zhihu1MData.get_df_zhihu_1m()

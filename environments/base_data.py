@@ -16,10 +16,12 @@ class BaseData:
                 os.mkdir(path)
 
     # @staticmethod
-    def get_and_save_seq_data(self, df_data, df_user, df_item, x_columns, reward_columns, seq_columns, max_item_list_len, len_reward_to_go, reload=False):
-        filepath_seq_rewards = os.path.join(self.RESULTPATH, "df_seq_rewards.csv")
-        filepath_hist_seq_dict = os.path.join(self.RESULTPATH, "hist_seq_dict.pickle")
-        filepath_to_go_seq_dict = os.path.join(self.RESULTPATH, "to_go_seq_dict.pickle")
+    # NOTE: add augment rate
+    def get_and_save_seq_data(self, df_data, df_user, df_item, x_columns, reward_columns, seq_columns, max_item_list_len, len_reward_to_go, reload=False, augment_rate=0):
+        postfix = '' if augment_rate == 0 else f'_+{augment_rate}'
+        filepath_seq_rewards = os.path.join(self.RESULTPATH, f"df_seq_rewards{postfix}.csv")
+        filepath_hist_seq_dict = os.path.join(self.RESULTPATH, f"hist_seq_dict{postfix}.pickle")
+        filepath_to_go_seq_dict = os.path.join(self.RESULTPATH, f"to_go_seq_dict{postfix}.pickle")
 
         if (
                 not reload

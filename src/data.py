@@ -190,11 +190,16 @@ def prepare_dataset(args):
     df_data, df_user, df_item, list_feat = dataset.get_data()
 
     user_features, item_features, reward_features = DataClass.get_features(df_user, df_item, args.use_userinfo)
+    
+    # NOTE: data augmentation
+    print('Data Augmentation')
+    df_data = DataClass.data_augment(df_data, k=args.augment_rate)
+
     x_columns, reward_columns, seq_columns, y_column = get_xy_columns(
         df_user, df_item, user_features, item_features, reward_features, args.local_D, args.local_D)
 
     df_seq_rewards, hist_seq_dict, to_go_seq_dict = dataset.get_and_save_seq_data(df_data, df_user, df_item,
-        x_columns, reward_columns, seq_columns, args.max_item_list_len, args.len_reward_to_go, args.reload)
+        x_columns, reward_columns, seq_columns, args.max_item_list_len, args.len_reward_to_go, args.reload, args.augment_rate)
 
     train_dataset, test_dataset = split_and_construct_dataset(df_user, df_item,
                                                               x_columns, reward_columns, seq_columns, y_column,
