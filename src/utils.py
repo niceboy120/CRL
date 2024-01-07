@@ -7,7 +7,16 @@ import json
 import socket
 
 
-
+def set_seed(seed=42):
+    import numpy as np
+    import torch
+    import random
+    
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)  # If using CUDA
+    
 def log_config(args):
     MODEL_SAVE_PATH, logger_path = prepare_dir_log(args)
     nowtime = datetime.datetime.fromtimestamp(time.time()).strftime("%Y_%m_%d-%H_%M_%S")

@@ -9,7 +9,7 @@ from collector import Collector
 from ctrl import CTRL, CTRLConfig
 
 
-from utils import log_config
+from utils import log_config, set_seed
 # from inputs import SparseFeatP
 from data import get_DataClass, get_common_args, get_datapath, prepare_dataset
 
@@ -54,6 +54,8 @@ def get_args():
 
     parser.add_argument("--cuda_id", type=int, default=2)
     parser.add_argument("--message", type=str, default="test")
+    # NOTE: add augment rate
+    parser.add_argument("--augment_rate", type=int, default=0)
 
     # parser.add_argument("--env", type=str, default="KuaiRand-1K")
     args = parser.parse_known_args()[0]
@@ -76,6 +78,8 @@ def get_args():
 def main(args):
     args = get_common_args(args)
     log_config(args)
+    # NOTE: set seed
+    set_seed(args.seed)
 
     train_dataset, test_dataset, env, mat = prepare_dataset(args)
     # get model
