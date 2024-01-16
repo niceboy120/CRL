@@ -47,15 +47,15 @@ class BaseEnv:
             with open(pareto_front_filepath, "wb") as f:
                 pickle.dump(self.pareto_front, f)
             
-            # get raw pareto front
-            key_statistics = df_seq_rewards.describe()[target_features]
-            self.pareto_front = (key_statistics.loc["max"] - key_statistics.loc["min"]).to_numpy() * self.pareto_front + key_statistics.loc["min"].to_numpy()
-            print(f"Raw pareto front for bin:{bin} and percentile:{percentile} is ", self.pareto_front)
-
-            
-            # pickle dump pareto_front
-            with open(raw_pareto_front_filepath, "wb") as f:
-                pickle.dump(self.pareto_front, f)
+            # # get raw pareto front
+            # key_statistics = df_seq_rewards.describe()[target_features]
+            # self.pareto_front = (key_statistics.loc["max"] - key_statistics.loc["min"]).to_numpy() * self.pareto_front + key_statistics.loc["min"].to_numpy()
+            # print(f"Raw pareto front for bin:{bin} and percentile:{percentile} is ", self.pareto_front)
+            #
+            #
+            # # pickle dump pareto_front
+            # with open(raw_pareto_front_filepath, "wb") as f:
+            #     pickle.dump(self.pareto_front, f)
 
         logzero.logger.info(f"All Pareto Fronts for Env are: {self.pareto_front}")
 

@@ -198,7 +198,7 @@ def compute_diversity(to_go_item_array, indices, list_tags_items):
         # print("done!")
     return res
 
-def get_statistics(df, df_user, df_item, target_df, to_go_seq_dict, serendipity_threshold=[3, 4, 5], tag_label="tags"):
+def get_statistics(df, df_user, df_item, target_df, to_go_seq_dict, serendipity_threshold=[3, 4, 5], tag_label="tags", standardize=True):
     # get the number of each item's consumption by users in df
     item_count = df.groupby("item_id").agg(len)["user_id"]
     # item_count_set = df.groupby("item_id").agg(lambda x: len(set(x)))["user_id"]
@@ -256,6 +256,12 @@ def get_statistics(df, df_user, df_item, target_df, to_go_seq_dict, serendipity_
         )
 
     target_df.loc[:, "sum_rating"] = to_go_rating_array.sum(axis=1)
+
+    if standardize: # normalize the sequence rewards to [0,1]
+        feats_to_normalize = ["sum_rating", "diversity", "novelty"] + [f"serendipity_{v}" for v in serendipity_threshold]
+        for feat in feats_to_normalize:
+            target_df.loc[:, f"{feat}_raw"] = target_df[feat]
+            target_df.loc[:, feat] = (target_df[feat] - target_df[feat].min()) / (target_df[feat].max() - target_df[feat].min())
 
     return target_df
 

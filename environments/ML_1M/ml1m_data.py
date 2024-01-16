@@ -182,16 +182,16 @@ class ML1MData(BaseData):
 
 
     @staticmethod
-    def data_augment(df_data, k=1):
+    def data_augment(df_data, augment_rate=1):
         from tqdm import tqdm
-        if k <= 0:
+        if augment_rate <= 0:
             return df_data
         all_user_id = df_data['user_id'].unique()
         auxiliary_data = []
         for uid in tqdm(all_user_id, desc="Iterating for augmentation"):
             user_interactions = df_data[df_data['user_id'] == uid]
             user_item_num = len(user_interactions)
-            sampled = user_interactions.sample(n=int(user_item_num*k), replace=True, random_state=42)
+            sampled = user_interactions.sample(n=int(user_item_num * augment_rate), replace=True, random_state=42)
             # set sampled's timestamp to 0 (so that it will always appears before real interactions)
             sampled['timestamp'] = 0
             sampled['date'] = pd.to_datetime(sampled['timestamp'], unit='s')

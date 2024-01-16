@@ -18,6 +18,9 @@ def get_common_args(args):
     parser.add_argument(
         "--no_userinfo", dest="use_userinfo", action="store_false")
 
+    # NOTE: add augment rate
+    parser.add_argument("--augment_rate", type=int, default=0)
+
     # parser.add_argument("--is_binarize", dest="is_binarize",
     #                     action="store_true")
     # parser.add_argument("--no_binarize", dest="is_binarize",
@@ -94,12 +97,7 @@ def get_xy_columns(df_user, df_item, user_features, item_features, reward_featur
         [DenseFeat(col, dimension=1, embedding_dim=feature_dim) for col in item_features["dense"]]
     reward_columns = [DenseFeat(name, dimension=1, embedding_dim=feature_dim) for name in reward_features]
 
-    seq_columns = item_columns
-    x_columns = user_columns
-    reward_columns = reward_columns
-    y_column = item_columns[0]
-
-    return x_columns, reward_columns, seq_columns, y_column
+    return user_columns, item_columns, reward_columns
 
 
 def get_DataClass(envname):
@@ -125,8 +123,7 @@ def get_DataClass(envname):
     return DataClass
 
 
-def split_and_construct_dataset(df_user, df_item, x_columns, reward_columns, seq_columns, y_column,
-                                df_seq_rewards, hist_seq_dict, to_go_seq_dict, max_seq_length, len_reward_to_go):
+def get_train_test_idx(df_seq_rewards, len_reward_to_go,):
     user_ids = df_seq_rewards["user_id"].to_numpy()
     session_start_id_list = [0] + list(np.diff(user_ids).nonzero()[0] + 1)
     session_end_id_list = list(np.array(session_start_id_list[1:]) - 1) + [len(user_ids) - 1]
@@ -140,25 +137,25 @@ def split_and_construct_dataset(df_user, df_item, x_columns, reward_columns, seq
     test_interaction_idx = np.concatenate(
         [np.arange(x, y + 1) for x, y in zip(test_interaction_idx_left, test_interaction_idx_right)])
 
+
+    train_interaction_idx = np.ones(len(df_seq_rewards), dtype=bool)
+    train_interaction_idx[test_interaction_idx] = False
+
+    return train_interaction_idx, test_interaction_idx
+
+def split_and_construct_dataset(df_user, df_item, x_columns, reward_columns, seq_columns, y_column,
+                                df_seq_rewards, hist_seq_dict, to_go_seq_dict, max_seq_length, len_reward_to_go):
+
+    train_interaction_idx, test_interaction_idx = get_train_test_idx(df_seq_rewards, len_reward_to_go)
     df_test_rewards = df_seq_rewards.loc[test_interaction_idx]
+    df_train_rewards = df_seq_rewards.loc[train_interaction_idx]
+
     test_hist_seq_dict = {key: item[test_interaction_idx] for key, item in hist_seq_dict.items()}
     test_to_go_seq_dict = {key: item[test_interaction_idx] for key, item in to_go_seq_dict.items()}
 
-    print(1)
-    train_idx = np.ones(len(df_seq_rewards), dtype=bool)
-    train_idx[test_interaction_idx] = False
-    # list_train_id = [x for x in df_seq_rewards.index if x not in test_interaction_idx]
+    train_hist_seq_dict = {key: item[train_interaction_idx] for key, item in hist_seq_dict.items()}
+    train_to_go_seq_dict = {key: item[train_interaction_idx] for key, item in to_go_seq_dict.items()}
 
-    print(2)
-    df_train_rewards = df_seq_rewards.loc[train_idx]
-    print(3)
-    train_hist_seq_dict = {key: item[train_idx]
-                           for key, item in hist_seq_dict.items()}
-    print(4)
-    train_to_go_seq_dict = {
-        key: item[train_idx] for key, item in to_go_seq_dict.items()
-    }
-    print(5)
     train_dataset = StateActionReturnDataset(
         df_user=df_user,
         df_item=df_item,
@@ -183,6 +180,12 @@ def split_and_construct_dataset(df_user, df_item, x_columns, reward_columns, seq
 
     return train_dataset, test_dataset
 
+def get_upside_down_columns(user_columns, item_columns, reward_columns):
+    seq_columns = item_columns
+    x_columns = user_columns
+    reward_columns = reward_columns
+    y_column = item_columns[0]
+    return x_columns, seq_columns, reward_columns, y_column
 
 def prepare_dataset(args):
     DataClass = get_DataClass(args.env)
@@ -193,10 +196,12 @@ def prepare_dataset(args):
     
     # NOTE: data augmentation
     print('Data Augmentation')
-    df_data = DataClass.data_augment(df_data, k=args.augment_rate)
+    df_data = DataClass.data_augment(df_data, augment_rate=args.augment_rate)
 
-    x_columns, reward_columns, seq_columns, y_column = get_xy_columns(
+    user_columns, item_columns, reward_columns = get_xy_columns(
         df_user, df_item, user_features, item_features, reward_features, args.local_D, args.local_D)
+
+    x_columns, seq_columns, reward_columns, y_column = get_upside_down_columns(user_columns, item_columns, reward_columns)
 
     df_seq_rewards, hist_seq_dict, to_go_seq_dict = dataset.get_and_save_seq_data(df_data, df_user, df_item,
         x_columns, reward_columns, seq_columns, args.max_item_list_len, args.len_reward_to_go, args.reload, args.augment_rate)

@@ -47,68 +47,68 @@ class Trainer:
         #     self.model = self.model.to(self.device)
         self.device = config.args.device
 
+    def run_epoch(self, model, config, optimizer, epoch, split, epoch_num=0):
+        is_train = split == 'train'
+        model.train(is_train)
+        dataset = self.train_dataset if is_train else self.test_dataset
+        loader = DataLoader(dataset, shuffle=False, pin_memory=True,
+                            batch_size=config.batch_size,
+                            num_workers=config.num_workers)
+
+        losses = []
+        data_len = len(loader)
+        pbar = tqdm(enumerate(loader), total=data_len) if is_train else enumerate(loader)
+
+        for it, (x, reward, seq, y, len_data) in pbar:
+            x = x.to(self.device)  # states
+            reward = reward.to(self.device)  # desired reward info
+            seq = seq.to(self.device)  # sequence data
+            y = y.to(self.device)  # next target
+            len_data = len_data.to(self.device)
+
+            # forward the model
+            with torch.set_grad_enabled(is_train):
+
+                act_logit, atts, loss = model(x, reward, seq, targets=y, len_data=len_data)
+                # loss = loss.mean()  # collapse all losses if they are scattered on multiple gpus
+
+                if is_train:
+                    for p in model.parameters():
+                        p.grad = None
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_norm_clip)
+                    optimizer.step()
+                    if writer is not None:
+                        writer.add_scalar('training_loss', loss.item(), epoch_num * data_len + it)
+
+            if is_train:
+                if config.lr_decay:
+                    self.tokens += (seq >= 0).sum()
+                    if self.tokens < config.warmup_tokens:
+                        lr_mult = float(self.tokens) / float(max(1, config.warmup_tokens))
+                    else:
+                        progress = float(self.tokens - config.warmup_tokens) / float(
+                            max(1, config.final_tokens - config.warmup_tokens))
+                        lr_mult = max(0.1, 0.5 * (1.0 + math.cos(math.pi * progress)))
+                    lr = config.learning_rate * lr_mult
+                    for param_group in optimizer.param_groups:
+                        param_group['lr'] = lr
+                else:
+                    lr = config.learning_rate
+
+            pbar.set_description(f"epoch {epoch} iter {it}: train loss {loss.item():.5f}. lr {lr:e}")
+
     def train(self):
         model, config = self.model, self.config
         raw_model = model.module if hasattr(self.model, "module") else model
         optimizer = raw_model.configure_optimizers(config)
-
-        def run_epoch(split, epoch_num=0):
-            is_train = split == 'train'
-            model.train(is_train)
-            dataset = self.train_dataset if is_train else self.test_dataset
-            loader = DataLoader(dataset, shuffle=False, pin_memory=True,
-                                batch_size=config.batch_size,
-                                num_workers=config.num_workers)
-
-            losses = []
-            data_len = len(loader)
-            pbar = tqdm(enumerate(loader), total=data_len) if is_train else enumerate(loader)
-
-            for it, (x, reward, seq, y, len_data) in pbar:
-                x = x.to(self.device)  # states
-                reward = reward.to(self.device)  # desired reward info
-                seq = seq.to(self.device)  # sequence data
-                y = y.to(self.device)  # next target
-                len_data = len_data.to(self.device)
-
-                # forward the model
-                with torch.set_grad_enabled(is_train):
-
-                    act_logit, atts, loss = model(x, reward, seq, targets=y, len_data=len_data)
-                    # loss = loss.mean()  # collapse all losses if they are scattered on multiple gpus
-
-                    if is_train:
-                        for p in model.parameters():
-                            p.grad = None
-                        loss.backward()
-                        torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_norm_clip)
-                        optimizer.step()
-                        if writer is not None:
-                            writer.add_scalar('training_loss', loss.item(), epoch_num * data_len + it)
-
-                if is_train:
-                    if config.lr_decay:
-                        self.tokens += (seq >= 0).sum()
-                        if self.tokens < config.warmup_tokens:
-                            lr_mult = float(self.tokens) / float(max(1, config.warmup_tokens))
-                        else:
-                            progress = float(self.tokens - config.warmup_tokens) / float(
-                                max(1, config.final_tokens - config.warmup_tokens))
-                            lr_mult = max(0.1, 0.5 * (1.0 + math.cos(math.pi * progress)))
-                        lr = config.learning_rate * lr_mult
-                        for param_group in optimizer.param_groups:
-                            param_group['lr'] = lr
-                    else:
-                        lr = config.learning_rate
-
-                pbar.set_description(f"epoch {epoch} iter {it}: train loss {loss.item():.5f}. lr {lr:e}")
 
         self.tokens = 0  # counter used for learning rate decay
         for epoch in range(config.max_epochs + 1):
             # res = self.collector.collect()  # for debug
             # eval_return, eval_std = self.get_returns(0) # for debug
             if epoch > 0:
-                run_epoch('train', epoch_num=epoch)
+                self.run_epoch(model, config, optimizer, epoch, split='train', epoch_num=epoch)
             res = self.collector.collect()
             logzero.logger.info(f"Epoch: [{epoch}], Info: [{res}]")
             if writer is not None:

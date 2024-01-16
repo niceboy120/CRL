@@ -54,8 +54,6 @@ def get_args():
 
     parser.add_argument("--cuda_id", type=int, default=2)
     parser.add_argument("--message", type=str, default="test")
-    # NOTE: add augment rate
-    parser.add_argument("--augment_rate", type=int, default=0)
 
     # parser.add_argument("--env", type=str, default="KuaiRand-1K")
     args = parser.parse_known_args()[0]
