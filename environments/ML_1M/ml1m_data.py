@@ -27,6 +27,8 @@ class ML1MData(BaseData):
         self.ENVPATH = os.path.dirname(__file__)
         self.serendipity_threshold = [3,4,5]
         super().__init__(*args, **kwargs)
+        self.item_padding_id = 0
+        self.user_padding_id = 0
 
     @staticmethod
     def get_env_class():

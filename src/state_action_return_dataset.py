@@ -19,12 +19,10 @@ class StateActionReturnDataset(Dataset):
         self.num_items = y_column.vocabulary_size
     
     def compile(self, df_seq_rewards, hist_seq_dict, to_go_seq_dict):
-        
-        self.x_names = []
 
         x_list = [df_seq_rewards[column.name].to_numpy().reshape(-1, 1) for column in self.x_columns]
         self.x_numpy = np.concatenate(x_list, axis=-1)
-        user_ids = self.x_numpy[:,0]
+        user_ids = self.x_numpy[:, self.user_index]
         self.session_start_id_list = [0] + list(np.diff(user_ids).nonzero()[0] + 1) # TODO: Use all interaction data of one user as a session (sequence)!
 
 

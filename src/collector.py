@@ -145,9 +145,6 @@ class Collector:
 
         return res
 
-
-        # self.test_dataset.seq_numpy[60400, 0]
-
 def get_rec_ids(buffer, indices, item_col):
     if len(buffer) == 0:
         rec_id = None
@@ -164,3 +161,6 @@ def get_logit_mask(y_logits, buffer, indices, item_col, item_padding_id):
         logit_mask[:, item_padding_id] = 0  # todo: for movielens-1m
 
     return logit_mask
+
+
+

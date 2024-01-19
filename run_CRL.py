@@ -16,6 +16,7 @@ from data import get_DataClass, get_common_args, get_datapath, prepare_dataset
 from trainer import Trainer, TrainerConfig
 
 
+
 # from starformer import Starformer, StarformerConfig
 
 
@@ -34,7 +35,7 @@ def get_args():
     parser.add_argument("--max_item_list_len", type=int, default=30)
     parser.add_argument("--len_reward_to_go", type=int, default=10)
 
-    parser.add_argument("--model_type", type=str, default="ctrl")
+    parser.add_argument("--model_name", type=str, default="ctrl")
 
     parser.add_argument("--batch_size", type=int, default=1024)
     parser.add_argument("--local_D", type=int, default=32)
@@ -85,7 +86,7 @@ def main(args):
         train_dataset.num_items, pos_drop=0.1, resid_drop=0.1, 
         local_num_feat=len(train_dataset.reward_columns) + 2,  # 1 dim for the sequence embedding and 1 dim for the user embedding
         x_columns=train_dataset.x_columns,  reward_columns=train_dataset.reward_columns, seq_columns=train_dataset.seq_columns, y_column=train_dataset.y_column,
-        model_type=args.model_type, N_head=8, global_D=args.global_D, local_N_head=4, local_D=args.local_D, 
+        model_name=args.model_name, N_head=8, global_D=args.global_D, local_N_head=4, local_D=args.local_D,
         n_layer=args.n_layer, max_seqlens=args.max_item_list_len - args.len_reward_to_go, gru_layers=1, hidden_size=args.local_D, device=args.device,
     )
     model = CTRL(mconf).to(args.device)
@@ -94,7 +95,7 @@ def main(args):
         max_epochs=args.epochs, batch_size=args.batch_size, learning_rate=args.lr, num_items=train_dataset.num_items,
         lr_decay=True, warmup_tokens=512 * 20,
         final_tokens=10 * len(train_dataset) * args.max_item_list_len - args.len_reward_to_go,
-        num_workers=8, seed=args.seed, model_type=args.model_type, game=args.env, 
+        num_workers=8, seed=args.seed, model_name=args.model_name, game=args.env,
         max_seqlens=args.max_item_list_len - args.len_reward_to_go, 
         args=args,
     )

@@ -12,54 +12,21 @@ from .utils import get_novelty, get_serendipity, get_diversiy
 from .get_pareto_front import get_kde_density, get_pareto_front
 
 
-class BaseEnv:
-    def __init__(self, df_seq_rewards, target_features, seq_columns, bin=100, percentile=90, pareto_reload=False):
+class SLEnv:
+    def __init__(self, item_columns, reward_columns, user_padding_id, item_padding_id):
 
-        features = [col.name for col in seq_columns]
-        self.item_col = features.index("item_id")
-        self.rating_col = features.index("rating")
+        item_features = [col.name for col in item_columns]
+        self.item_col = item_features.index("item_id")
+
+        reward_features = [col.name for col in reward_columns]
+        self.rating_col = reward_features.index("sum_rating")
         self.item_padding_id = None
-        self.user_padding_id = None
 
+        self.reward_columns = reward_columns
+        self.target_features = [column.name for column in reward_columns]
 
-        self.seq_columns = seq_columns
-        self.target_features = target_features
-        pareto_front_path = f"pareto_front_bin{bin}_per{percentile}_({','.join(target_features)}).pkl"
-        raw_pareto_front_path = f"raw_pareto_front_bin{bin}_per{percentile}_({','.join(target_features)}).pkl"
-        pareto_front_filepath = os.path.join(self.RESULTPATH, pareto_front_path)
-        raw_pareto_front_filepath = os.path.join(self.RESULTPATH, raw_pareto_front_path)
-
-        # if not reload and os.path.exists(pareto_front_filepath):
-        #     print("pareto front has already been computed! Loading...")
-        #     with open(pareto_front_filepath, "rb") as f:
-        #         self.pareto_front = pickle.load(f)
-        #     print("pareto front loaded!")
-        #     return self.pareto_front
-        if not pareto_reload and os.path.exists(raw_pareto_front_filepath): # use raw pareto front
-            print("raw pareto front has already been computed! Loading...")
-            with open(raw_pareto_front_filepath, "rb") as f:
-                self.pareto_front = pickle.load(f)
-            print("raw pareto front loaded!")
-            # return self.raw_pareto_front
-        else:
-            density_flat, grid_flat = get_kde_density(df_seq_rewards, target_features, bin)
-            self.pareto_front = get_pareto_front(density_flat, grid_flat, percentile)
-            print(f"pareto front for bin:{bin} and percentile:{percentile} is ", self.pareto_front)
-            # pickle dump pareto_front
-            with open(pareto_front_filepath, "wb") as f:
-                pickle.dump(self.pareto_front, f)
-            
-            # # get raw pareto front
-            # key_statistics = df_seq_rewards.describe()[target_features]
-            # self.pareto_front = (key_statistics.loc["max"] - key_statistics.loc["min"]).to_numpy() * self.pareto_front + key_statistics.loc["min"].to_numpy()
-            # print(f"Raw pareto front for bin:{bin} and percentile:{percentile} is ", self.pareto_front)
-            #
-            #
-            # # pickle dump pareto_front
-            # with open(raw_pareto_front_filepath, "wb") as f:
-            #     pickle.dump(self.pareto_front, f)
-
-        logzero.logger.info(f"All Pareto Fronts for Env are: {self.pareto_front}")
+        self.user_padding_id = user_padding_id
+        self.item_padding_id = item_padding_id
 
     def reset(self, ):
         pass

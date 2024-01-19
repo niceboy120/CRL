@@ -72,14 +72,14 @@ class PatchEmb(nn.Module):
             # +1 for mask
             self.action_emb = nn.Embedding(config.vocab_size+1, iD)
         
-        if 'rwd' in config.model_type:
+        if 'rwd' in config.model_name:
               self.reward_emb = nn.Sequential(nn.Linear(1, iD), nn.Tanh())
         self.spatial_emb = nn.Parameter(torch.zeros(1, h*w//p1//p2, iD))
         
         
         self.temporal_emb = nn.Parameter(torch.zeros(1, maxt, D))
-        if 'xconv' not in config.model_type:
-            if 'vit' in config.model_type:
+        if 'xconv' not in config.model_name:
+            if 'vit' in config.model_name:
                 self.conv_emb = nn.Sequential(
                             Rearrange('bt c (h p1) (w p2) -> bt (h w) (p1 p2 c)', p1 = p1, p2 = p2),
                             nn.Linear(p1*p2*c, iD),
@@ -101,13 +101,13 @@ class PatchEmb(nn.Module):
         B, T, C, H, W = states.size()
         local_state_tokens = (self.patch_embedding(states) + self.spatial_emb).reshape(B, T, -1, self.config.local_D)
 
-        if 'xconv' in self.config.model_type or 'stack' in self.config.model_type:
+        if 'xconv' in self.config.model_name or 'stack' in self.config.model_name:
             global_state_tokens = 0
         else:
             global_state_tokens = self.conv_emb(states.reshape(-1, C, H, W)).reshape(B, T, -1) + self.temporal_emb[:, :T]
         local_action_tokens = self.action_emb(actions.reshape(-1, 1)).reshape(B, T, -1).unsqueeze(2) # B T 1 iD
 
-        if 'rwd' in self.config.model_type:
+        if 'rwd' in self.config.model_name:
             local_reward_tokens = self.reward_emb(rewards.reshape(-1, 1)).reshape(B, T, -1).unsqueeze(2)
             local_tokens = torch.cat((local_action_tokens, local_state_tokens, local_reward_tokens), dim=2)
         else:
@@ -144,7 +144,7 @@ class SABlock(nn.Module):
         patch_count = h*w//p1//p2
         self.local_block = _SABlock(config, config.local_N_head, config.local_D)
         self.global_block = _SABlock(config, config.N_head, config.D)
-        if 'fusion' in config.model_type:
+        if 'fusion' in config.model_name:
             self.register_buffer("mask", torch.tril(torch.ones(config.maxT*2, config.maxT*2))
                                      .view(1, 1, config.maxT*2, config.maxT*2))
         else:
@@ -153,8 +153,8 @@ class SABlock(nn.Module):
             for i in range(0, config.maxT*2, 2):
                 self.mask[0, 0, i, i-1] = 1.
         self.local_norm = nn.LayerNorm(config.local_D)
-        if 'stack' not in config.model_type:
-            if 'rwd' in config.model_type:
+        if 'stack' not in config.model_name:
+            if 'rwd' in config.model_name:
                 self.local_global_proj = nn.Sequential(
                     nn.Linear((patch_count+1+1)*config.local_D, config.D), # +1 for action token +1 for reward token
                     nn.LayerNorm(config.D)
@@ -172,9 +172,9 @@ class SABlock(nn.Module):
         local_tokens = local_tokens.reshape(B, T, P, d)
         lt_tmp = self.local_norm(local_tokens.reshape(-1, d)).reshape(B*T, P*d)
         lt_tmp = self.local_global_proj(lt_tmp).reshape(B, T, -1)
-        if 'fusion' in self.config.model_type or 'xconv' in self.config.model_type:
+        if 'fusion' in self.config.model_name or 'xconv' in self.config.model_name:
             global_tokens += lt_tmp
-            if ('xconv' in self.config.model_type) and (temporal_emb is not None):
+            if ('xconv' in self.config.model_name) and (temporal_emb is not None):
                 global_tokens += temporal_emb
             global_tokens, global_att = self.global_block(global_tokens, self.mask)
             return local_tokens, global_tokens, local_att, global_att
@@ -204,8 +204,8 @@ class Starformer(nn.Module):
         
         self.local_pos_drop = nn.Dropout(config.pos_drop)
         self.global_pos_drop = nn.Dropout(config.pos_drop)
-        if 'stack' in config.model_type:
-            if 'rwd' in config.model_type:
+        if 'stack' in config.model_name:
+            if 'rwd' in config.model_name:
                 self.local_global_proj = nn.Sequential(
                     nn.Linear((patch_count+1+1)*config.local_D, config.D), # +1 for action token +1 for reward token
                     nn.LayerNorm(config.D)
@@ -295,12 +295,12 @@ class Starformer(nn.Module):
 
         local_tokens, global_state_tokens, temporal_emb = self.token_emb(states, actions, rewards=rewards)
         local_tokens = self.local_pos_drop(local_tokens)
-        if ('xconv' not in self.config.model_type) and ('stack' not in self.config.model_type):
+        if ('xconv' not in self.config.model_name) and ('stack' not in self.config.model_name):
             global_state_tokens = self.global_pos_drop(global_state_tokens)
         
         B, T, P, d = local_tokens.size()
         local_atts, global_atts = [], []
-        if 'stack' in self.config.model_type:
+        if 'stack' in self.config.model_name:
             for i, blk in enumerate(self.blocks):
                 local_tokens, local_att = blk.local_block(local_tokens.reshape(-1, P, d))
                 local_att = local_att.detach()
@@ -351,7 +351,7 @@ class StarformerConfig:
         
 if __name__ == "__main__":
     mconf = StarformerConfig(4, img_size = (4, 84, 84), patch_size = (7, 7), context_length=30, pos_drop=0.1, resid_drop=0.1,
-                          N_head=8, D=192, local_N_head=4, local_D=64, model_type='star', max_timestep=100, n_layer=6, C=4, maxT=30)
+                          N_head=8, D=192, local_N_head=4, local_D=64, model_name='star', max_timestep=100, n_layer=6, C=4, maxT=30)
 
     model = Starformer(mconf)
     model = model.cuda()
@@ -367,7 +367,7 @@ if __name__ == "__main__":
 
     # other test codes
 #     mconf = StarformerConfig(4, img_size = (4, 84, 84), patch_size = (7, 7), context_length=30, pos_drop=0.1, resid_drop=0.1,
-#                           N_head=8, D=192, local_N_head=4, local_D=64, model_type='star', max_timestep=100, n_layer=6, C=4, maxT = 30)
+#                           N_head=8, D=192, local_N_head=4, local_D=64, model_name='star', max_timestep=100, n_layer=6, C=4, maxT = 30)
 
 #     model = Starformer(mconf)
 #     model = model.cuda()
@@ -384,7 +384,7 @@ if __name__ == "__main__":
     
     
 #     mconf = StarformerConfig(4, img_size = (4, 84, 84), patch_size = (7, 7), context_length=30, pos_drop=0.1, resid_drop=0.1,
-#                           N_head=8, D=192, local_N_head=4, local_D=64, model_type='star_fusion', max_timestep=100, n_layer=6, C=4, maxT=30)
+#                           N_head=8, D=192, local_N_head=4, local_D=64, model_name='star_fusion', max_timestep=100, n_layer=6, C=4, maxT=30)
     
 #     model = Starformer(mconf)
 #     model = model.cuda()

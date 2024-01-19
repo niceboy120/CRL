@@ -8,6 +8,8 @@ from .utils import get_seq_target_and_indices, get_statistics
 class BaseData:
 
     def __init__(self, *args, **kwargs):
+        self.item_padding_id = None
+        self.user_padding_id = None
         self.DATAPATH = os.path.join(self.ENVPATH, "data")
         self.FIGPATH = os.path.join(self.ENVPATH, "figs")
         self.RESULTPATH = os.path.join(self.ENVPATH, "data_processed")

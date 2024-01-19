@@ -37,7 +37,7 @@ def create_dir(create_dirs):
 
 def prepare_dir_log(args):
     # %% 1. Create dirs
-    MODEL_SAVE_PATH = os.path.join(".", "saved_models", args.env, args.model_type)
+    MODEL_SAVE_PATH = os.path.join(".", "saved_models", args.env, args.model_name)
     create_dirs = [os.path.join(".", "saved_models"),
                    os.path.join(".", "saved_models", args.env),
                    MODEL_SAVE_PATH,

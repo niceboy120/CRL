@@ -105,8 +105,6 @@ class Trainer:
 
         self.tokens = 0  # counter used for learning rate decay
         for epoch in range(config.max_epochs + 1):
-            # res = self.collector.collect()  # for debug
-            # eval_return, eval_std = self.get_returns(0) # for debug
             if epoch > 0:
                 self.run_epoch(model, config, optimizer, epoch, split='train', epoch_num=epoch)
             res = self.collector.collect()

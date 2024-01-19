@@ -91,7 +91,7 @@ class SABlock(nn.Module):
         self.local_block = _SABlock(config, config.local_N_head, config.local_D)
         self.global_block = _SABlock(config, config.N_head, config.global_D)
 
-        if 'fusion' in config.model_type:
+        if 'fusion' in config.model_name:
             self.register_buffer("mask", torch.tril(torch.ones(config.max_seqlens*2, config.max_seqlens*2))
                                      .view(1, 1, config.max_seqlens*2, config.max_seqlens*2))
         else:
@@ -101,7 +101,7 @@ class SABlock(nn.Module):
                 self.mask[0, 0, i, i-1] = 1.
 
         self.local_norm = nn.LayerNorm(config.local_D)
-        if 'stack' not in config.model_type:
+        if 'stack' not in config.model_name:
             self.local_global_proj = nn.Sequential(
                     nn.Linear(config.local_num_feat * config.local_D, config.global_D), # +1 for action token
                     nn.LayerNorm(config.global_D)
@@ -115,9 +115,9 @@ class SABlock(nn.Module):
         local_tokens = local_tokens.reshape(B, T, P, d)
         lt_tmp = self.local_norm(local_tokens.reshape(-1, d)).reshape(B*T, P*d)
         lt_tmp = self.local_global_proj(lt_tmp).reshape(B, T, -1)
-        if 'fusion' in self.config.model_type or 'xconv' in self.config.model_type:
+        if 'fusion' in self.config.model_name or 'xconv' in self.config.model_name:
             global_tokens += lt_tmp
-            if ('xconv' in self.config.model_type) and (temporal_emb is not None):
+            if ('xconv' in self.config.model_name) and (temporal_emb is not None):
                 global_tokens += temporal_emb
             global_tokens, global_att = self.global_block(global_tokens, self.mask)
             return local_tokens, global_tokens, local_att, global_att
@@ -225,13 +225,13 @@ class PatchEmb(nn.Module):
         return local_tokens, global_tokens, self.temporal_emb[:, :len_data]
 
 
-        # if 'xconv' in self.config.model_type or 'stack' in self.config.model_type:
+        # if 'xconv' in self.config.model_name or 'stack' in self.config.model_name:
         #     global_state_tokens = 0
         # else:
         #     global_state_tokens = self.sequence_embedding(seq_tensor) + self.temporal_emb[:, :T]
         # local_action_tokens = self.action_emb(seq.reshape(-1, 1)).reshape(B, T, -1).unsqueeze(2) # B T 1 iD
 
-        # if 'rwd' in self.config.model_type:
+        # if 'rwd' in self.config.model_name:
         #     local_reward_tokens = self.reward_emb(rewards.reshape(-1, 1)).reshape(B, T, -1).unsqueeze(2)
         #     local_tokens = torch.cat((local_action_tokens, local_state_tokens, local_reward_tokens), dim=2)
         # else:
@@ -259,7 +259,7 @@ class CTRL(nn.Module):
         self.global_pos_drop = nn.Dropout(config.pos_drop)
         self.device = config.device
 
-        if 'stack' in config.model_type:
+        if 'stack' in config.model_name:
             self.local_global_proj = nn.Sequential(
                     nn.Linear(config.local_num_feat * config.local_D, config.global_D), # +1 for action token
                     nn.LayerNorm(config.global_D)
@@ -352,12 +352,12 @@ class CTRL(nn.Module):
 
         local_tokens, global_state_tokens, temporal_emb = self.token_emb(x, reward, seq)
         local_tokens = self.local_pos_drop(local_tokens)
-        if ('xconv' not in self.config.model_type) and ('stack' not in self.config.model_type):
+        if ('xconv' not in self.config.model_name) and ('stack' not in self.config.model_name):
             global_state_tokens = self.global_pos_drop(global_state_tokens)
         
         B, T, P, d = local_tokens.size()
         local_atts, global_atts = [], []
-        if 'stack' in self.config.model_type:
+        if 'stack' in self.config.model_name:
             for i, blk in enumerate(self.blocks):
                 local_tokens, local_att = blk.local_block(local_tokens.reshape(-1, P, d))
                 local_att = local_att.detach()
@@ -419,7 +419,7 @@ class CTRLConfig:
         
 if __name__ == "__main__":
     mconf = CTRLConfig(4, img_size = (4, 84, 84), patch_size = (7, 7), context_length=30, pos_drop=0.1, resid_drop=0.1,
-                          N_head=8, D=192, local_N_head=4, local_D=64, model_type='star', max_timestep=100, n_layer=6, C=4, max_seqlens=30)
+                          N_head=8, D=192, local_N_head=4, local_D=64, model_name='star', max_timestep=100, n_layer=6, C=4, max_seqlens=30)
 
     model = CTRL(mconf)
     model = model.cuda()
