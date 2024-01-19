@@ -40,4 +40,9 @@ environments/Zhihu_1M/data/
 *.tgz
 *.rar
 *.7z
+*.pt
+
+
+/saved_models
+/chkpt
 
