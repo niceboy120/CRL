@@ -196,7 +196,7 @@ def prepare_dataset(args):
     
     # NOTE: data augmentation
     print('Data Augmentation')
-    df_data = DataClass.data_augment(df_data, augment_rate=args.augment_rate)
+    df_data = DataClass.data_augment(df_data, time_field_name=dataset.time_field_name, augment_rate=args.augment_rate)
 
     user_columns, item_columns, reward_columns = get_xy_columns(
         df_user, df_item, user_features, item_features, reward_features, args.local_D, args.local_D)

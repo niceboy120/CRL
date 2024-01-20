@@ -55,12 +55,13 @@ class MatrixFactorization(nn.Module):
 
 # Training and Evaluation Function
 def train_and_evaluate(model, train_loader, test_loader, criterion, optimizer, epochs=5, device="cpu"):
+    print("Generating ground-truth data for evaluation for the first time!")
     for epoch in range(epochs):
         # Training Phase
         model.train()
         total_train_loss = 0
         total_train_mae = 0
-        for users, movies, ratings in tqdm(train_loader, desc=f'Epoch {epoch + 1} - Training'):
+        for users, movies, ratings in tqdm(train_loader, desc=f'Epoch {epoch + 1}/{epochs} - Training'):
             users, movies, ratings = users.to(device), movies.to(device), ratings.to(device)
 
             optimizer.zero_grad()
@@ -116,7 +117,7 @@ def main(device="cpu"):
     # optimizer = optim.Adam(model.parameters(), lr=0.01)
 
     # Running the Training and Evaluation
-    train_and_evaluate(model, train_loader, test_loader, criterion, optimizer, epochs=80, device=device)
+    train_and_evaluate(model, train_loader, test_loader, criterion, optimizer, epochs=50, device=device)
 
     # Save the trained model
     model_save_path = os.path.join(DATAPATH, 'trained_model.pth')

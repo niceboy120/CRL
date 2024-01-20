@@ -29,6 +29,7 @@ class ML1MData(BaseData):
         super().__init__(*args, **kwargs)
         self.item_padding_id = 0
         self.user_padding_id = 0
+        self.time_field_name = "timestamp"
 
     @staticmethod
     def get_env_class():
@@ -181,29 +182,6 @@ class ML1MData(BaseData):
         df.groupby(["user_id"]).agg(len).describe()
 
         return df
-
-
-    @staticmethod
-    def data_augment(df_data, augment_rate=1):
-        from tqdm import tqdm
-        if augment_rate <= 0:
-            return df_data
-        all_user_id = df_data['user_id'].unique()
-        auxiliary_data = []
-        for uid in tqdm(all_user_id, desc="Iterating for augmentation"):
-            user_interactions = df_data[df_data['user_id'] == uid]
-            user_item_num = len(user_interactions)
-            sampled = user_interactions.sample(n=int(user_item_num * augment_rate), replace=True, random_state=42)
-            # set sampled's timestamp to 0 (so that it will always appears before real interactions)
-            sampled['timestamp'] = 0
-            sampled['date'] = pd.to_datetime(sampled['timestamp'], unit='s')
-            sampled['day'] = sampled['date'].dt.date
-            auxiliary_data.append(sampled)
-        auxiliary_df = pd.concat(auxiliary_data)
-        # add to original data
-        augmented_df = pd.concat([df_data, auxiliary_df])
-        augmented_df.sort_values(by=["user_id", "timestamp"], ascending=True, inplace=True)
-        return augmented_df
 
 
     # @staticmethod

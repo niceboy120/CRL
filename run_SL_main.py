@@ -20,7 +20,7 @@ from data import get_DataClass, get_xy_columns, get_common_args, get_train_test_
 from environments.SL_env import SLEnv
 from inputs import SparseFeat, DenseFeat
 from utils import log_config
-
+import argparse
 sys.path.extend(["baselines/RMTL"])
 
 
@@ -31,7 +31,51 @@ sys.path.extend(["baselines/RMTL"])
 from baselines.RMTL.train.run import get_model, sltrain as train, sltest as test, slpred as pred
 
 
+def get_SL_args():
+    seed = 2024
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--dataset_name', default='rt',
+                        choices=['AliExpress_NL', 'AliExpress_ES', 'AliExpress_FR', 'AliExpress_US', "rt", "rsc"])
+    parser.add_argument('--dataset_path', default='baselines/RMTL/dataset/')
+    parser.add_argument('--model_name', type=str, default='esmm',
+                        choices=['singletask', 'sharedbottom', 'omoe', 'mmoe', 'ple', 'aitm', 'esmm'])
+    parser.add_argument('--epoch', type=int, default=3)
+    parser.add_argument('--task_num', type=int, default=2)
+    parser.add_argument('--expert_num', type=int, default=8)
+    parser.add_argument('--polish', type=float, default=0.)
+    parser.add_argument('--learning_rate', type=float, default=0.001)
+    parser.add_argument('--feature_map_rate', type=float, default=0.2)
+    parser.add_argument('--batch_size', type=int, default=2048)
+    parser.add_argument('--embed_dim', type=int, default=128)
+    parser.add_argument('--weight_decay', type=float, default=1e-6)
+    parser.add_argument('--device', type=int, default=0)
+    parser.add_argument('--save_dir', default='saved_models/SL')
 
+    # added arguments_for_CRL
+    # ###########################################################################
+    parser.add_argument("--env", type=str, default="ml-1m")
+    # parser.add_argument("--env", type=str, default="Zhihu-1M")
+    # parser.add_argument("--env", type=str, default="KuaiRand-Pure")
+    parser.add_argument("--is_reload", dest="reload", action="store_true")
+    parser.add_argument("--no_reload", dest="reload", action="store_false")
+    parser.set_defaults(reload=False)
+
+    parser.add_argument("--max_item_list_len", type=int, default=30)
+    parser.add_argument("--len_reward_to_go", type=int, default=10)
+
+    parser.add_argument('--message', type=str, default='debug')
+    # ###########################################################################
+
+    args = parser.parse_known_args()[0]
+    args = get_common_args(args)
+
+    args.device = f'cuda:{args.device}' if torch.cuda.is_available() else 'cpu'
+    log_config(args)
+    return args
 
 class SL_Dataset(Dataset):
     def __init__(self, df_seq_rewards, df_user, df_item, user_columns, item_columns, reward_columns, user_index=0):
@@ -95,11 +139,10 @@ def get_datasets(args):
     df_data, df_user, df_item, list_feat = dataset.get_data()
 
     user_features, item_features, reward_features = DataClass.get_features(df_user, df_item, args.use_userinfo)
-    item_features["dense"] = list(set(item_features["dense"]) - set(["rating"]))
 
     # NOTE: data augmentation
     print('Data Augmentation')
-    df_data = DataClass.data_augment(df_data, augment_rate=args.augment_rate)
+    df_data_augmented = DataClass.data_augment(df_data, time_field_name=dataset.time_field_name, augment_rate=args.augment_rate)
 
     user_columns, item_columns, reward_columns = get_xy_columns(
         df_user, df_item, user_features, item_features, reward_features, args.embed_dim, args.embed_dim)
@@ -107,8 +150,11 @@ def get_datasets(args):
     seq_columns = item_columns
     x_columns = user_columns
 
-    df_seq_rewards, hist_seq_dict, to_go_seq_dict = dataset.get_and_save_seq_data(df_data, df_user, df_item,
+    df_seq_rewards, hist_seq_dict, to_go_seq_dict = dataset.get_and_save_seq_data(df_data_augmented, df_user, df_item,
         x_columns, reward_columns, seq_columns, args.max_item_list_len, args.len_reward_to_go, args.reload, args.augment_rate)
+
+    item_features["dense"] = list(set(item_features["dense"]) - set(["rating"])) # Todo: for all multi-task SL methods
+    item_columns = [col for col in item_columns if col.name != "rating"] # Todo: for all multi-task SL methods
 
     train_interaction_idx, test_interaction_idx = get_train_test_idx(df_seq_rewards, args.len_reward_to_go)
     df_test_rewards = df_seq_rewards.loc[test_interaction_idx]
@@ -126,18 +172,7 @@ def get_datasets(args):
     return train_dataset, test_dataset, env, mat
 
 
-def main(dataset_name,
-         task_num,
-         expert_num,
-         model_name,
-         epoch,
-         learning_rate,
-         batch_size,
-         embed_dim,
-         weight_decay,
-         polish_lambda,
-         device,
-         args):
+def main(task_num, expert_num, model_name, epoch, learning_rate, batch_size, embed_dim, weight_decay, device, args):
     device = torch.device(device)
     # 装载数据集
 
@@ -145,8 +180,6 @@ def main(dataset_name,
 
     train_data_loader = DataLoader(train_dataset, batch_size=batch_size, num_workers=4, shuffle=False)
     # test_data_loader = DataLoader(test_dataset, batch_size=batch_size, num_workers=4, shuffle=False)
-
-
 
     field_dims = [column.vocabulary_size for column in train_dataset.categorical_columns]
     numerical_num = len(train_dataset.numerical_columns) if len(train_dataset.numerical_columns) else 1
@@ -165,7 +198,7 @@ def main(dataset_name,
     if not os.path.isdir(save_dir):
         os.makedirs(save_dir)
 
-    save_path = f'{save_dir}/{dataset_name}_{model_name}_{polish_lambda}.pt'
+    # save_path = f'{save_dir}/{dataset_name}_{model_name}_{polish_lambda}.pt'
 
     # if polish_lambda != 0:
     #     hyparams = Arguments()
@@ -180,65 +213,13 @@ def main(dataset_name,
     # early_stopper = EarlyStopper(num_trials=2, save_path=save_path)
     for epoch_i in range(epoch + 1):
         if epoch_i > 0:
-            train_loss = train(model, optimizer, train_data_loader, criterion, device, polisher)
+            train_loss = train(model, optimizer, train_data_loader, criterion, device)
         res = collector.collect()
-        logzero.logger.info(f"Epoch: [{epoch}], Info: [{res}]")
+        logzero.logger.info(f"Epoch: [{epoch_i}/{epoch}], Info: [{res}]")
 
 
 if __name__ == '__main__':
-    import argparse
+    args = get_SL_args()
 
-    seed = 2022
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset_name', default='rt',
-                        choices=['AliExpress_NL', 'AliExpress_ES', 'AliExpress_FR', 'AliExpress_US', "rt", "rsc"])
-    parser.add_argument('--dataset_path', default='baselines/RMTL/dataset/')
-    parser.add_argument('--model_name', default='esmm',
-                        choices=['singletask', 'sharedbottom', 'omoe', 'mmoe', 'ple', 'aitm', 'esmm'])
-    parser.add_argument('--epoch', type=int, default=3)
-    parser.add_argument('--task_num', type=int, default=2)
-    parser.add_argument('--expert_num', type=int, default=8)
-    parser.add_argument('--polish', type=float, default=0.)
-    parser.add_argument('--learning_rate', type=float, default=0.001)
-    parser.add_argument('--feature_map_rate', type=float, default=0.2)
-    parser.add_argument('--batch_size', type=int, default=2048)
-    parser.add_argument('--embed_dim', type=int, default=128)
-    parser.add_argument('--weight_decay', type=float, default=1e-6)
-    parser.add_argument('--device', type=int, default=0)
-    parser.add_argument('--save_dir', default='saved_models/SL')
-
-    # added arguments_for_CRL
-    # ###########################################################################
-    parser.add_argument("--env", type=str, default="ml-1m")
-    parser.add_argument("--is_reload", dest="reload", action="store_true")
-    parser.add_argument("--no_reload", dest="reload", action="store_false")
-    parser.set_defaults(reload=False)
-
-    parser.add_argument("--max_item_list_len", type=int, default=30)
-    parser.add_argument("--len_reward_to_go", type=int, default=10)
-
-    parser.add_argument('--message', type=str, default='debug')
-    # ###########################################################################
-
-    args = parser.parse_args()
-    args = get_common_args(args)
-
-    args.device = f'cuda:{args.device}' if torch.cuda.is_available() else 'cpu'
-    log_config(args)
-
-    main(args.dataset_name,
-         args.task_num,
-         args.expert_num,
-         args.model_name,
-         args.epoch,
-         args.learning_rate,
-         args.batch_size,
-         args.embed_dim,
-         args.weight_decay,
-         args.polish,
-         args.device,
-         args)
+    main(args.task_num, args.expert_num, args.model_name, args.epoch, args.learning_rate,
+         args.batch_size, args.embed_dim, args.weight_decay, args.device, args)

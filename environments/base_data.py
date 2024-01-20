@@ -68,7 +68,25 @@ class BaseData:
 
         return df_seq_rewards, hist_seq_dict, to_go_seq_dict
 
-
-
-
+    @staticmethod
+    def data_augment(df_data, time_field_name, augment_rate=1):
+        from tqdm import tqdm
+        if augment_rate <= 0:
+            return df_data
+        all_user_id = df_data['user_id'].unique()
+        auxiliary_data = []
+        for uid in tqdm(all_user_id, desc="Iterating for augmentation"):
+            user_interactions = df_data[df_data['user_id'] == uid]
+            user_item_num = len(user_interactions)
+            sampled = user_interactions.sample(n=int(user_item_num * augment_rate), replace=True, random_state=42)
+            # set sampled's timestamp to 0 (so that it will always appears before real interactions)
+            sampled[time_field_name] = 0
+            sampled['date'] = pd.to_datetime(sampled[time_field_name], unit='s')
+            sampled['day'] = sampled['date'].dt.date
+            auxiliary_data.append(sampled)
+        auxiliary_df = pd.concat(auxiliary_data)
+        # add to original data
+        augmented_df = pd.concat([df_data, auxiliary_df])
+        augmented_df.sort_values(by=["user_id", time_field_name], ascending=True, inplace=True)
+        return augmented_df
 

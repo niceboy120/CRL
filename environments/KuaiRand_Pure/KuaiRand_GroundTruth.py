@@ -214,6 +214,7 @@ def main(device="cpu"):
     #                dnn_hidden_units=args.hidden_size, dnn_dropout=0.5, device=device)
 
     model.compile('adam', 'binary_crossentropy', metrics=['binary_crossentropy', 'acc', 'mae'])
+    print("Generating ground-truth data for evaluation for the first time!")
     model.fit(x_list, y_list, batch_size=args.batch_size, epochs=args.epochs, validation_split=0.1)
 
 
