@@ -39,13 +39,14 @@ python run_CRL.py --env ml-1m  # run ML-1M dataset (default)
 python run_CRL.py --env Zhihu-1M  # run Zhihu-1M dataset
 python run_CRL.py --env KuaiRand-Pure  # run KuaiRand-Pure dataset
 
-python run_CRL.py --env ml-1m  --augment_rate 10 # 科鑫试出来有效 
-python run_CRL.py --env Zhihu-1M  --augment_rate 10 # 还没调试
-python run_CRL.py --env KuaiRand-Pure  --augment_rate 10 # 还没调试
-
 python run_SL_main.py --epoch 10 --device 1 --model_name esmm --env ml-1m  --augment_rate 10 # 待尝试 & 
 python run_SL_main.py --epoch 10 --device 2 --model_name esmm --env Zhihu-1M  --augment_rate 10 # 还没调试 &
 python run_SL_main.py --epoch 10 --device 3 --model_name esmm --env KuaiRand-Pure  --augment_rate 10 # 还没调试 &
+
+python run_DT4Rec.py --env ml-1m
+python run_DT4Rec.py --env Zhihu-1M
+python run_DT4Rec.py --env KuaiRand-Pure
+
 ```
 说明：
 首次运行时，会计算并存储一些文件，比如调用DeepCTR的库填补出所有一个groundtruth矩阵，即所有用户对所有商品的评分。这个过程稍慢一些。之后运行就会变快。

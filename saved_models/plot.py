@@ -4,11 +4,11 @@ import json
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from paretoset import paretoset
+from paretoset import paretoset # pip install paretoset
 import seaborn as sns
 sns.set_style('whitegrid')
 
-plot_pareto = False
+plot_pareto = False # whether to plot pareto front of the training dataset (not the desired ones)
 
 for dataset_name in [name for name in os.listdir() if os.path.isdir(name)]:
     cur_dir = os.path.join(dataset_name, 'ctrl/logs')
