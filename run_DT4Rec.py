@@ -5,9 +5,9 @@ import logzero
 import torch
 
 import sys
-
-
 sys.path.extend(["./src"])
+
+from baselines.DT4Rec.dt4rec import DT4Rec
 from collector import Collector
 from ctrl import CTRL, CTRLConfig
 
@@ -41,7 +41,7 @@ def get_args():
     parser.add_argument("--model_name", type=str, default="ctrl")
 
     parser.add_argument("--batch_size", type=int, default=1024)
-    parser.add_argument("--local_D", type=int, default=32)
+    parser.add_argument("--n_embd", type=int, default=32)
     parser.add_argument("--global_D", type=int, default=40)
     parser.add_argument("--n_layer", type=int, default=2)
 
@@ -82,17 +82,20 @@ def main(args):
     log_config(args)
     # NOTE: set seed
     set_seed(args.seed)
-
+    args.local_D = args.n_embd
     train_dataset, test_dataset, env, mat = prepare_dataset(args)
     # get model
     mconf = CTRLConfig(
-        train_dataset.num_items, pos_drop=0.1, resid_drop=0.1, 
+        train_dataset.num_items,
+        n_embd=args.n_embd,
+        item_col_id=[column.name for column in train_dataset.seq_columns].index("item_id"),
+        pos_drop=0.1, resid_drop=0.1,
         local_num_feat=len(train_dataset.reward_columns) + 2,  # 1 dim for the sequence embedding and 1 dim for the user embedding
         x_columns=train_dataset.x_columns,  reward_columns=train_dataset.reward_columns, seq_columns=train_dataset.seq_columns, y_column=train_dataset.y_column,
-        model_name=args.model_name, N_head=8, global_D=args.global_D, local_N_head=4, local_D=args.local_D,
-        n_layer=args.n_layer, max_seqlens=args.max_item_list_len - args.len_reward_to_go, gru_layers=1, hidden_size=args.local_D, device=args.device,
+        model_name=args.model_name, N_head=8,  global_D=args.global_D, local_N_head=4, local_D=args.local_D,
+        n_layer=args.n_layer, max_seqlens=args.max_item_list_len - args.len_reward_to_go, gru_layers=1, device=args.device,
     )
-    model = CTRL(mconf).to(args.device)
+    model = DT4Rec(mconf).to(args.device)
 
     tconf = TrainerConfig(
         max_epochs=args.epochs, batch_size=args.batch_size, learning_rate=args.lr, num_items=train_dataset.num_items,

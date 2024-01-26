@@ -59,18 +59,17 @@ class Trainer:
         data_len = len(loader)
         pbar = tqdm(enumerate(loader), total=data_len) if is_train else enumerate(loader)
 
-        for it, (x, reward, seq, y, len_data, len_hist) in pbar:
+        for it, (x, reward, seq, y, len_data) in pbar:
             x = x.to(self.device)  # states
             reward = reward.to(self.device)  # desired reward info
             seq = seq.to(self.device)  # sequence data
             y = y.to(self.device)  # next target
             len_data = len_data.to(self.device)
-            len_hist = len_hist.to(self.device)
 
             # forward the model
             with torch.set_grad_enabled(is_train):
 
-                act_logit, atts, loss = model(x, reward, seq, targets=y, len_data=len_data, len_hist=len_hist)
+                act_logit, atts, loss = model(x, reward, seq, targets=y, len_data=len_data)
                 # loss = loss.mean()  # collapse all losses if they are scattered on multiple gpus
 
                 if is_train:

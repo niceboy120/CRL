@@ -10,6 +10,9 @@ import torch.nn.functional as F
 from torch.nn.init import trunc_normal_
 
 import sys
+
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+
 sys.path.extend(["./src"])
 
 from inputs import build_input_features, create_embedding_matrix, compute_input_dim, input_from_feature_columns
@@ -23,7 +26,7 @@ class GELU(nn.Module):
         return F.gelu(input) 
 
 class CausalSelfAttention(nn.Module):
-    def __init__(self, config, N_head=6, D=128, T=30):
+    def __init__(self, config, N_head=8, D=128, T=30):
         super().__init__()
         assert D % N_head == 0
         self.config = config
@@ -188,41 +191,54 @@ class PatchEmb(nn.Module):
     def no_weight_decay(self):
         return {'spatial_emb', 'temporal_emb'}
     
-    def forward(self, x, reward, seq):
+    def forward(self, x, reward, seq, len_data, len_hist):
         # B, T, C, H, W = x.size()
         # local_state_tokens = (self.sequence_embedding(x) + self.spatial_emb).reshape(B, T, -1, self.config.local_D)
         
-        num_batch, len_data, num_features = x.shape
-        num_batch, len_data, num_rewards = reward.shape
-        num_batch, len_data, num_seq_features, len_state = seq.shape
+        num_batch, len_data_with_padding, num_features = x.shape
+        num_batch, len_data_with_padding, num_rewards = reward.shape
+        num_batch, len_data_with_padding, num_seq_features, len_state = seq.shape
 
         x_values = input_from_feature_columns(x.reshape(-1, num_features), self.config.x_columns, self.feature_embedding, self.feature_index, support_dense=True, device=x.device)
         reward_values = input_from_feature_columns(reward.reshape(-1, num_rewards), self.config.reward_columns, self.reward_embedding, self.reward_index, support_dense=True, device=x.device)
         seq_values = input_from_feature_columns(seq.reshape(-1, num_seq_features, len_state), self.config.seq_columns, self.seq_embedding, self.seq_index, support_dense=True, device=x.device)
+        len_hist_reshape = len_hist.reshape(-1)
+
+        mask = torch.arange(reward.size(1)).expand(len(len_data), reward.size(1)) < len_data.unsqueeze(1)
+        mask = mask.view(-1)
 
         # from einops.layers.torch import Rearrange
 
         # x_tensor = combined_dnn_input(x_values, [])
         # seq_tensor = combined_dnn_input(seq_values, [])
 
-        x_tensor = torch.cat(x_values, dim=1).reshape(num_batch, len_data, num_features, -1)
-        reward_tensor = torch.cat(reward_values, dim=1).reshape(num_batch, len_data, num_rewards, -1)
+        x_tensor = torch.cat(x_values, dim=1).reshape(num_batch, len_data_with_padding, num_features, -1)
+        reward_tensor = torch.cat(reward_values, dim=1).reshape(num_batch, len_data_with_padding, num_rewards, -1)
         seq_tensor = torch.cat(seq_values, dim=-1).squeeze(1)
 
+        user_representation = self.user_encoder(x_tensor)
 
-        output, hn = self.sequence_embedding(seq_tensor)
+
+        seq_tensor_masked = seq_tensor[mask]
+        len_hist_masked = len_hist_reshape[mask]
+
+        packed_input = pack_padded_sequence(seq_tensor_masked, len_hist_masked, batch_first=True, enforce_sorted=False)
+        packed_output, hn = self.sequence_embedding(packed_input)
+        output, _ = pad_packed_sequence(packed_output, batch_first=True)
+
         # seq_tensor.detach().cpu().numpy()[:,-1,0]
 
-        user_representation = self.user_encoder(x_tensor)
-        
-        seq_output = hn[-1].reshape(num_batch, len_data, -1).unsqueeze(2)
-        # seq_output = output[:, -1].reshape(num_batch, len_data, -1).unsqueeze(2)
+        gru_output = torch.zeros([num_batch * len_data_with_padding, hn.shape[-1]]).to(reward.device)
+        gru_output[mask] = hn[-1]
+        # gru_output[mask] = output[:, -1]
 
-        local_tokens = torch.cat([user_representation, reward_tensor, seq_output], dim=2)
+        gru_output_recovered = gru_output.reshape(num_batch, len_data_with_padding, 1, -1)
 
-        global_tokens = self.global_proj(seq_output.squeeze(2))
+        local_tokens = torch.cat([user_representation, reward_tensor, gru_output_recovered], dim=2)
 
-        return local_tokens, global_tokens, self.temporal_emb[:, :len_data]
+        global_tokens = self.global_proj(gru_output_recovered.squeeze(2))
+
+        return local_tokens, global_tokens, self.temporal_emb[:, :len_data_with_padding]
 
 
         # if 'xconv' in self.config.model_name or 'stack' in self.config.model_name:
@@ -347,10 +363,10 @@ class CTRL(nn.Module):
             return F.cross_entropy(pred.reshape(-1, pred.size(-1)), target.reshape(-1).long(), reduction='none')    
 
     
-    def forward(self, x, reward, seq, targets, len_data):
+    def forward(self, x, reward, seq, targets, len_data, len_hist):
         # actions should be already padded by dataloader
 
-        local_tokens, global_state_tokens, temporal_emb = self.token_emb(x, reward, seq)
+        local_tokens, global_state_tokens, temporal_emb = self.token_emb(x, reward, seq, len_data, len_hist)
         local_tokens = self.local_pos_drop(local_tokens)
         if ('xconv' not in self.config.model_name) and ('stack' not in self.config.model_name):
             global_state_tokens = self.global_pos_drop(global_state_tokens)
@@ -373,8 +389,7 @@ class CTRL(nn.Module):
             for i, blk in enumerate(self.blocks):
                 if i == 0:
                     local_tokens, global_state_tokens, local_att, global_att = blk(local_tokens, global_state_tokens, temporal_emb)
-                else:
-                    local_tokens, global_state_tokens, local_att, global_att = blk(local_tokens, global_state_tokens, temporal_emb)
+
                 local_att = local_att.detach()
                 global_att = global_att.detach()
                 # for return attention maps

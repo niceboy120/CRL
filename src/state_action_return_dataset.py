@@ -25,13 +25,14 @@ class StateActionReturnDataset(Dataset):
         user_ids = self.x_numpy[:, self.user_index]
         self.session_start_id_list = [0] + list(np.diff(user_ids).nonzero()[0] + 1) # TODO: Use all interaction data of one user as a session (sequence)!
 
-
         reward_list = [df_seq_rewards[column.name].to_numpy().reshape(-1, 1) for column in self.reward_columns]
         self.reward_numpy = np.concatenate(reward_list, axis=-1)
 
         seq_list = [hist_seq_dict[column.name + "_list"] for column in self.seq_columns]
         seq_numpy_temp = np.stack(seq_list) # (num_fields, num_samples, seq_length)
         self.seq_numpy = np.transpose(seq_numpy_temp, (1, 0, 2)) # (num_samples, num_fields, seq_length)
+
+        self.len_hist = hist_seq_dict["len_hist"]
 
         self.y_numpy = df_seq_rewards[self.y_column.name].to_numpy().reshape(-1, 1)
 
@@ -40,12 +41,20 @@ class StateActionReturnDataset(Dataset):
         self.reward_numpy = np.concatenate([self.reward_numpy, np.zeros_like(self.reward_numpy[0:1])], axis=0)
         self.seq_numpy = np.concatenate([self.seq_numpy, np.zeros_like(self.seq_numpy[0:1])], axis=0)
         self.y_numpy = np.concatenate([self.y_numpy, np.zeros_like(self.y_numpy[0:1])], axis=0)
+        self.len_hist = np.concatenate([self.len_hist, np.zeros_like(self.len_hist[0:1])], axis=0)
         self.padding_idx = len(self.y_numpy) - 1
 
         self.x_numpy = self.x_numpy.astype(np.float32)
         self.reward_numpy = self.reward_numpy.astype(np.float32)
         self.seq_numpy = self.seq_numpy.astype(np.float32)
         self.y_numpy = self.y_numpy.astype(np.int64)
+
+        # unique_elements, indices = np.unique(self.x_numpy, return_index=True)
+        # self.timestep = np.zeros_like(self.x_numpy.squeeze(), dtype=np.int64)
+        # # 为每个唯一元素赋予递增索引
+        # for element, index in zip(unique_elements, indices):
+        #     element_indices = np.where(self.x_numpy == element)[0]
+        #     self.timestep[element_indices] = np.arange(len(element_indices))
         
         self.to_go_seq_dict = to_go_seq_dict # for evaluation todo
 
@@ -60,7 +69,7 @@ class StateActionReturnDataset(Dataset):
         dataset = torch.utils.data.TensorDataset(torch.Tensor(self.x_numpy),
                                                  torch.Tensor(self.reward_numpy),
                                                  torch.Tensor(self.seq_numpy),
-                                                 torch.Tensor(self.y_numpy))
+                                                 torch.Tensor(self.y_numpy),)
         return dataset
 
     def __getitem__(self, idx):
@@ -78,7 +87,7 @@ class StateActionReturnDataset(Dataset):
         else:
             len_data = self.max_seq_length
 
-        return self.x_numpy[indices], self.reward_numpy[indices], self.seq_numpy[indices], self.y_numpy[indices], len_data
+        return self.x_numpy[indices], self.reward_numpy[indices], self.seq_numpy[indices], self.y_numpy[indices], len_data, self.len_hist[indices]
 
     def __len__(self):
         return len(self.y_numpy) - 1 # minus 1 because of padding.

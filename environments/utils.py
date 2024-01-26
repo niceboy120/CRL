@@ -293,7 +293,7 @@ def get_seq_target_and_indices(df, seq_columns, max_item_list_len, len_reward_to
     item_list_length = np.array(item_list_length, dtype=np.int64)
 
     # Only use the part of sequences that satisfied the minimum length!
-    reserved_idx = item_list_length >= len_reward_to_go
+    reserved_idx = item_list_length >= (len_reward_to_go + 1) # Plus 1 let the len(hist_item_list) to be at least 1
 
     uid_list = uid_list[reserved_idx]
     hist_item_list_indices = hist_item_list_indices[reserved_idx]
@@ -339,6 +339,8 @@ def get_seq_target_and_indices(df, seq_columns, max_item_list_len, len_reward_to
         return hist_seq_dict, to_go_seq_dict
 
     hist_seq_dict, to_go_seq_dict = get_seq_field_data()
+    len_hist_seq = hist_item_list_indices[:,1] - hist_item_list_indices[:,0]
+    hist_seq_dict["len_hist"] = len_hist_seq
 
     return target_df, hist_seq_dict, to_go_seq_dict
 

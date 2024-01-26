@@ -1,3 +1,5 @@
+import traceback
+
 import logzero
 import torch
 import random
@@ -221,5 +223,10 @@ def main(task_num, expert_num, model_name, epoch, learning_rate, batch_size, emb
 if __name__ == '__main__':
     args = get_SL_args()
 
-    main(args.task_num, args.expert_num, args.model_name, args.epoch, args.learning_rate,
-         args.batch_size, args.embed_dim, args.weight_decay, args.device, args)
+    try:
+        main(args.task_num, args.expert_num, args.model_name, args.epoch, args.learning_rate,
+             args.batch_size, args.embed_dim, args.weight_decay, args.device, args)
+    except Exception as e:
+        var = traceback.format_exc()
+        logzero.logger.error(var)
+

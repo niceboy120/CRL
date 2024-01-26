@@ -45,18 +45,20 @@ class Collector:
         seq_batch = np.zeros((len(indices), 1, *self.test_dataset.seq_numpy.shape[-2:]))
         y_batch = np.zeros((len(indices), 1, self.test_dataset.y_numpy.shape[-1]))
         len_data_batch = np.zeros(len(indices))
+        len_hist_batch = np.zeros((len(indices), 1))
 
         ## Put one batch in the buffer, and set the reward to the target pareto front!
         for idx_k, idx in enumerate(indices):
-            (x, rewards, seq, y, len_data) = self.test_dataset.__getitem__(idx)
+            (x, rewards, seq, y, len_data, len_hist) = self.test_dataset.__getitem__(idx)
             rewards[:len_data] = self.target_pareto
             x_batch[idx_k] = x[:len_data, :]
             reward_batch[idx_k] = rewards[:len_data, :]
             seq_batch[idx_k] = seq[:len_data, :, :]
             y_batch[idx_k] = y[:len_data, :]
             len_data_batch[idx_k] = len_data
+            len_hist_batch[idx_k] = len_hist[:len_data]
 
-        batch = Batch(x_batch=x_batch, reward_batch=reward_batch, seq_batch=seq_batch, y_batch=y_batch, len_data_batch=len_data_batch)
+        batch = Batch(x_batch=x_batch, reward_batch=reward_batch, seq_batch=seq_batch, y_batch=y_batch, len_data_batch=len_data_batch, len_hist_batch=len_hist_batch)
         ptrs = self.buffer.add(batch)
 
     def collect(self, batch_size=1000, num_workers=4):
@@ -67,13 +69,14 @@ class Collector:
         for round in tqdm(range(self.test_seq_length), total=self.test_seq_length, desc="collecting test dataset"):
             batch, indices = self.buffer.sample(0)
 
-            (x_batch, reward_batch, seq_batch, y_batch, len_data_batch) = batch.x_batch, batch.reward_batch, batch.seq_batch, batch.y_batch, batch.len_data_batch
+            (x_batch, reward_batch, seq_batch, y_batch, len_data_batch, len_hist_batch) = batch.x_batch, batch.reward_batch, batch.seq_batch, batch.y_batch, batch.len_data_batch, batch.len_hist_batch
 
             x_batch = x_batch.reshape(self.buffer.buffer_num, -1, x_batch.shape[-1])
             reward_batch = reward_batch.reshape(self.buffer.buffer_num, -1, reward_batch.shape[-1])
             seq_batch = seq_batch.reshape(self.buffer.buffer_num, -1, *seq_batch.shape[-2:])
             y_batch = y_batch.reshape(self.buffer.buffer_num, -1, y_batch.shape[-1])
             len_data_batch = len_data_batch.reshape(self.buffer.buffer_num, -1)[:, -1]
+            len_hist_batch = len_hist_batch.reshape(self.buffer.buffer_num, -1)
 
             # x = x[:, :len_data, :]
 
@@ -84,21 +87,23 @@ class Collector:
             seq_batch_tensor = torch.from_numpy(seq_batch).float()
             y_batch_tensor = torch.from_numpy(y_batch).int()
             len_data_batch_tensor = torch.from_numpy(len_data_batch).long()
+            len_hist_batch_tensor = torch.from_numpy(len_hist_batch).long()
 
             dataset = torch.utils.data.TensorDataset(
-                x_batch_tensor, reward_batch_tensor, seq_batch_tensor, y_batch_tensor, len_data_batch_tensor)
+                x_batch_tensor, reward_batch_tensor, seq_batch_tensor, y_batch_tensor, len_data_batch_tensor, len_hist_batch_tensor)
             dataloader = DataLoader(dataset, batch_size=256, shuffle=False, num_workers=num_workers)
 
             act_logit_list = []
             with torch.no_grad():
-                for (x, reward, seq, y, len_data) in dataloader:
+                for (x, reward, seq, y, len_data, len_hist) in dataloader:
                     x = x.to(self.policy.device)
                     reward = reward.to(self.policy.device)
                     seq = seq.to(self.policy.device)
                     y = y.to(self.policy.device)
                     len_data = len_data.to(self.policy.device)
+                    len_hist = len_hist.to(self.policy.device)
 
-                    act_logit, atts, loss = self.policy(x, reward, seq, targets=None, len_data=len_data)
+                    act_logit, atts, loss = self.policy(x, reward, seq, targets=None, len_data=len_data, len_hist=len_hist)
                     act_logit_list.append(act_logit)
 
             y_logits = torch.cat(act_logit_list, dim=0)
@@ -134,8 +139,13 @@ class Collector:
             len_data_batch_new = len_data_batch + 1
             len_data_batch_new[len_data_batch_new > self.test_dataset.max_seq_length] = self.test_dataset.max_seq_length
 
+            len_hist_batch_new = len_hist_batch[:,-1:].copy()
+            len_hist_batch_new[:, -1] += 1
+            len_hist_batch_new[len_hist_batch_new > seq_batch_new.shape[-1]] = seq_batch_new.shape[-1]
+
+
             batch = Batch(x_batch=x_batch_new, seq_batch=seq_batch_new, y_batch=y_batch_new,
-                          len_data_batch=len_data_batch_new)
+                          len_data_batch=len_data_batch_new, len_hist_batch=len_hist_batch_new)
 
             ptrs = self.buffer.add(batch)
 
