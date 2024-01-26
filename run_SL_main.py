@@ -143,8 +143,10 @@ def get_datasets(args):
     user_features, item_features, reward_features = DataClass.get_features(df_user, df_item, args.use_userinfo)
 
     # NOTE: data augmentation
-    print('Data Augmentation')
-    df_data_augmented = DataClass.data_augment(df_data, time_field_name=dataset.time_field_name, augment_rate=args.augment_rate)
+    if args.augment_type == 'mat':
+        print("Augment Matrix Data")
+        df_data_augmented = dataset.augment_matrix(df_data, df_item, time_field_name=dataset.time_field_name, 
+                                        augment_rate=args.augment_rate, strategies=args.augment_strategies)
 
     user_columns, item_columns, reward_columns = get_xy_columns(
         df_user, df_item, user_features, item_features, reward_features, args.embed_dim, args.embed_dim)
@@ -153,7 +155,8 @@ def get_datasets(args):
     x_columns = user_columns
 
     df_seq_rewards, hist_seq_dict, to_go_seq_dict = dataset.get_and_save_seq_data(df_data_augmented, df_user, df_item,
-        x_columns, reward_columns, seq_columns, args.max_item_list_len, args.len_reward_to_go, args.reload, args.augment_rate)
+        x_columns, reward_columns, seq_columns, args.max_item_list_len, args.len_reward_to_go, args.reload, 
+        dataset.time_field_name, args.augment_type, args.augment_rate, args.augment_strategies)
 
     item_features["dense"] = list(set(item_features["dense"]) - set(["rating"])) # Todo: for all multi-task SL methods
     item_columns = [col for col in item_columns if col.name != "rating"] # Todo: for all multi-task SL methods

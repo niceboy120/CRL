@@ -19,7 +19,11 @@ def get_common_args(args):
         "--no_userinfo", dest="use_userinfo", action="store_false")
 
     # NOTE: add augment rate
-    parser.add_argument("--augment_rate", type=int, default=0)
+    parser.add_argument("--augment_type", type=str, default="seq", choices=["mat", "seq"], 
+                        help='augmentation type, mat: augment u-i-r matrix, seq: augment sequential data')
+    parser.add_argument("--augment_rate", type=float, default=0, help="the ratio of augmented data / raw data")
+    parser.add_argument("--augment_strategies", type=str, nargs="+", default=["random", "rating", "diversity"], 
+                        choices=["random", "rating", "diversity"])
 
     # parser.add_argument("--is_binarize", dest="is_binarize",
     #                     action="store_true")
@@ -195,8 +199,10 @@ def prepare_dataset(args):
     user_features, item_features, reward_features = DataClass.get_features(df_user, df_item, args.use_userinfo)
     
     # NOTE: data augmentation
-    print('Data Augmentation')
-    df_data = DataClass.data_augment(df_data, time_field_name=dataset.time_field_name, augment_rate=args.augment_rate)
+    if args.augment_type == 'mat':
+        print("Augment Matrix Data")
+        df_data = dataset.augment_matrix(df_data, df_item, time_field_name=dataset.time_field_name, 
+                                        augment_rate=args.augment_rate, strategies=args.augment_strategies)
 
     user_columns, item_columns, reward_columns = get_xy_columns(
         df_user, df_item, user_features, item_features, reward_features, args.local_D, args.local_D)
@@ -204,7 +210,8 @@ def prepare_dataset(args):
     x_columns, seq_columns, reward_columns, y_column = get_upside_down_columns(user_columns, item_columns, reward_columns)
 
     df_seq_rewards, hist_seq_dict, to_go_seq_dict = dataset.get_and_save_seq_data(df_data, df_user, df_item,
-        x_columns, reward_columns, seq_columns, args.max_item_list_len, args.len_reward_to_go, args.reload, args.augment_rate)
+        x_columns, reward_columns, seq_columns, args.max_item_list_len, args.len_reward_to_go, args.reload, 
+        dataset.time_field_name, args.augment_type, args.augment_rate, args.augment_strategies)
 
     train_dataset, test_dataset = split_and_construct_dataset(df_user, df_item,
                                                               x_columns, reward_columns, seq_columns, y_column,
