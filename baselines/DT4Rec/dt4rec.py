@@ -12,7 +12,7 @@ from torch.nn.init import trunc_normal_
 
 import sys
 
-from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+# from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 # from ctrl import CausalSelfAttention
 
@@ -277,7 +277,7 @@ class DT4Rec(nn.Module):
         rtgs = reward.sum(2).unsqueeze(-1)
 
         states = seq[:, :, self.config.item_col_id]
-        state_embeddings = torch.zeros([states.shape[0], states.shape[1], self.config.n_embd])
+        state_embeddings = torch.zeros([states.shape[0], states.shape[1], self.config.n_embd], device=seq.device)
         for i in range(states.shape[1]):
             states_seq = states[:, i, :].type(torch.long).squeeze(1)
             # len_hist_i = len_hist[:, i]
@@ -290,7 +290,7 @@ class DT4Rec(nn.Module):
         if targets is None:
             actions = states
         else:
-            actions = torch.zeros(states.size(0), states.size(1), self.max_seqlens)
+            actions = torch.zeros([states.size(0), states.size(1), self.max_seqlens], device=states.device)
             for i in range(states.size(0)):
                 for j in range(states.size(1)):
                     if self.max_seqlens == len_hist[i, j]:
@@ -301,7 +301,7 @@ class DT4Rec(nn.Module):
                         actions[i, j,  len_hist[i, j]] = targets[i, j]
 
             # actions = torch.concatenate([states, targets], dim=-1)
-        action_embeddings = torch.zeros([actions.shape[0], actions.shape[1] - (1 if targets is None else 0), self.config.n_embd])
+        action_embeddings = torch.zeros([actions.shape[0], actions.shape[1] - (1 if targets is None else 0), self.config.n_embd], device=actions.device)
         state_allstep = []
 
         for i in (range(actions.shape[1] - 1) if targets is None else range(actions.shape[1])):

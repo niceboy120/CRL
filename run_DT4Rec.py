@@ -12,7 +12,7 @@ from collector import Collector
 from ctrl import CTRL, CTRLConfig
 
 
-from utils import log_config, set_seed
+from utils import prepare_dir_log, set_seed
 # from inputs import SparseFeatP
 from data import get_DataClass, get_common_args, get_datapath, prepare_dataset
 
@@ -79,7 +79,7 @@ def get_args():
 
 def main(args):
     args = get_common_args(args)
-    log_config(args)
+    MODEL_SAVE_PATH, logger_path = prepare_dir_log(args)
     # NOTE: set seed
     set_seed(args.seed)
     args.local_D = args.n_embd

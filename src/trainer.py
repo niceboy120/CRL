@@ -109,7 +109,7 @@ class Trainer:
             if epoch > 0:
                 self.run_epoch(model, config, optimizer, epoch, split='train', epoch_num=epoch)
             res = self.collector.collect()
-            logzero.logger.info(f"Epoch: [{epoch}], Info: [{res}]")
+            logzero.logger.info(f"Epoch: [{epoch}/{config.max_epochs}], Info: [{res}]")
             if writer is not None:
                 for key, value in res.items():
                     writer.add_scalar(key, value, epoch)

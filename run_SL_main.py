@@ -21,7 +21,7 @@ from collector_SL import Collector_Baseline_SL
 from data import get_DataClass, get_xy_columns, get_common_args, get_train_test_idx
 from environments.SL_env import SLEnv
 from inputs import SparseFeat, DenseFeat
-from utils import log_config
+from utils import prepare_dir_log
 import argparse
 sys.path.extend(["baselines/RMTL"])
 
@@ -76,7 +76,7 @@ def get_SL_args():
     args = get_common_args(args)
 
     args.device = f'cuda:{args.device}' if torch.cuda.is_available() else 'cpu'
-    log_config(args)
+    MODEL_SAVE_PATH, logger_path = prepare_dir_log(args)
     return args
 
 class SL_Dataset(Dataset):

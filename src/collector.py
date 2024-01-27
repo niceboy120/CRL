@@ -36,7 +36,7 @@ class Collector:
 
         self.target_pareto_index = target_pareto_index
         self.target_pareto = self.env.pareto_front[target_pareto_index]
-        logzero.logger.info(f"pareto front: index: {target_pareto_index}, front: [{self.target_pareto}]")
+        print(f"pareto front: index: {target_pareto_index}, front: [{self.target_pareto}]")
 
         indices = np.array(self.test_dataset.session_start_id_list)
 
@@ -64,96 +64,101 @@ class Collector:
     def collect(self, batch_size=1000, num_workers=4):
 
         self.policy.eval()
-        self.compile()
+        all_res = {}
 
-        for round in tqdm(range(self.test_seq_length), total=self.test_seq_length, desc="collecting test dataset"):
-            batch, indices = self.buffer.sample(0)
+        for id_k, point in enumerate(self.env.pareto_front):
 
-            (x_batch, reward_batch, seq_batch, y_batch, len_data_batch, len_hist_batch) = batch.x_batch, batch.reward_batch, batch.seq_batch, batch.y_batch, batch.len_data_batch, batch.len_hist_batch
+            self.compile(target_pareto_index=id_k)
 
-            x_batch = x_batch.reshape(self.buffer.buffer_num, -1, x_batch.shape[-1])
-            reward_batch = reward_batch.reshape(self.buffer.buffer_num, -1, reward_batch.shape[-1])
-            seq_batch = seq_batch.reshape(self.buffer.buffer_num, -1, *seq_batch.shape[-2:])
-            y_batch = y_batch.reshape(self.buffer.buffer_num, -1, y_batch.shape[-1])
-            len_data_batch = len_data_batch.reshape(self.buffer.buffer_num, -1)[:, -1]
-            len_hist_batch = len_hist_batch.reshape(self.buffer.buffer_num, -1)
+            for round in tqdm(range(self.test_seq_length), total=self.test_seq_length, desc=f"Collecting for [{id_k+1}/{len(self.env.pareto_front)}] pareto front {point}"):
+                batch, indices = self.buffer.sample(0)
 
-            # x = x[:, :len_data, :]
+                (x_batch, reward_batch, seq_batch, y_batch, len_data_batch, len_hist_batch) = batch.x_batch, batch.reward_batch, batch.seq_batch, batch.y_batch, batch.len_data_batch, batch.len_hist_batch
 
-            assert all(len_data_batch == len_data_batch[0])
-            # len_all = len_data_batch[0].astype(int)
-            x_batch_tensor = torch.from_numpy(x_batch).float()
-            reward_batch_tensor = torch.from_numpy(reward_batch).float()
-            seq_batch_tensor = torch.from_numpy(seq_batch).float()
-            y_batch_tensor = torch.from_numpy(y_batch).int()
-            len_data_batch_tensor = torch.from_numpy(len_data_batch).long()
-            len_hist_batch_tensor = torch.from_numpy(len_hist_batch).long()
+                x_batch = x_batch.reshape(self.buffer.buffer_num, -1, x_batch.shape[-1])
+                reward_batch = reward_batch.reshape(self.buffer.buffer_num, -1, reward_batch.shape[-1])
+                seq_batch = seq_batch.reshape(self.buffer.buffer_num, -1, *seq_batch.shape[-2:])
+                y_batch = y_batch.reshape(self.buffer.buffer_num, -1, y_batch.shape[-1])
+                len_data_batch = len_data_batch.reshape(self.buffer.buffer_num, -1)[:, -1]
+                len_hist_batch = len_hist_batch.reshape(self.buffer.buffer_num, -1)
 
-            dataset = torch.utils.data.TensorDataset(
-                x_batch_tensor, reward_batch_tensor, seq_batch_tensor, y_batch_tensor, len_data_batch_tensor, len_hist_batch_tensor)
-            dataloader = DataLoader(dataset, batch_size=256, shuffle=False, num_workers=num_workers)
+                # x = x[:, :len_data, :]
 
-            act_logit_list = []
-            with torch.no_grad():
-                for (x, reward, seq, y, len_data, len_hist) in dataloader:
-                    x = x.to(self.policy.device)
-                    reward = reward.to(self.policy.device)
-                    seq = seq.to(self.policy.device)
-                    y = y.to(self.policy.device)
-                    len_data = len_data.to(self.policy.device)
-                    len_hist = len_hist.to(self.policy.device)
+                assert all(len_data_batch == len_data_batch[0])
+                # len_all = len_data_batch[0].astype(int)
+                x_batch_tensor = torch.from_numpy(x_batch).float()
+                reward_batch_tensor = torch.from_numpy(reward_batch).float()
+                seq_batch_tensor = torch.from_numpy(seq_batch).float()
+                y_batch_tensor = torch.from_numpy(y_batch).int()
+                len_data_batch_tensor = torch.from_numpy(len_data_batch).long()
+                len_hist_batch_tensor = torch.from_numpy(len_hist_batch).long()
 
-                    act_logit, atts, loss = self.policy(x, reward, seq, targets=None, len_data=len_data, len_hist=len_hist)
-                    act_logit_list.append(act_logit)
+                dataset = torch.utils.data.TensorDataset(
+                    x_batch_tensor, reward_batch_tensor, seq_batch_tensor, y_batch_tensor, len_data_batch_tensor, len_hist_batch_tensor)
+                dataloader = DataLoader(dataset, batch_size=256, shuffle=False, num_workers=num_workers)
 
-            y_logits = torch.cat(act_logit_list, dim=0)
+                act_logit_list = []
+                with torch.no_grad():
+                    for (x, reward, seq, y, len_data, len_hist) in dataloader:
+                        x = x.to(self.policy.device)
+                        reward = reward.to(self.policy.device)
+                        seq = seq.to(self.policy.device)
+                        y = y.to(self.policy.device)
+                        len_data = len_data.to(self.policy.device)
+                        len_hist = len_hist.to(self.policy.device)
 
-            logit_mask = get_logit_mask(y_logits, self.buffer, indices, self.env.item_col, self.env.item_padding_id)
-            # y_logits_masked = y_logits * logit_mask
-            y_logits_masked = torch.where(logit_mask == 0, torch.full_like(y_logits, float('-inf')), y_logits)
+                        act_logit, atts, loss = self.policy(x, reward, seq, targets=None, len_data=len_data, len_hist=len_hist)
+                        act_logit_list.append(act_logit)
 
-            # Greedy action:
-            y_pred = torch.argmax(y_logits_masked, dim=-1).cpu().numpy()
+                y_logits = torch.cat(act_logit_list, dim=0)
 
+                logit_mask = get_logit_mask(y_logits, self.buffer, indices, self.env.item_col, self.env.item_padding_id)
+                # y_logits_masked = y_logits * logit_mask
+                y_logits_masked = torch.where(logit_mask == 0, torch.full_like(y_logits, float('-inf')), y_logits)
 
-            # Obtain reward:
-            user_id = x_batch[:, round, self.test_dataset.user_index].astype(int)
-            feedback = self.mat[user_id, y_pred].reshape(-1, 1)
-
-            df_item_new = self.test_dataset.df_item.loc[y_pred].reset_index(drop=False)
-            item_new = df_item_new[[col.name for col in self.test_dataset.seq_columns[:-1]]].to_numpy() # TODO: note that the last index (-1) indicates the user feedback!
-            item_feedback = np.concatenate([item_new, feedback], axis=-1) # Todo: note that the last index (-1) indicates the user feedback!
-
-            # Update buffer:
-            x_batch_new = x_batch[:, -1:, :].copy()
-            reward_batch_new = reward_batch[:, -1:, :].copy()
-
-            seq_batch_new = seq_batch[:, -1:, :, :].copy()
-            seq_batch_new[:, :, :, :-1] = seq_batch_new[:, :, :, 1:]
-            seq_batch_new[:, -1, :, -1] = item_feedback
-
-            y_batch_new = y_batch[:, -1:, :].copy()
-            y_batch_new[:, -1, :] = self.test_dataset.y_numpy[
-                np.array(self.test_dataset.session_start_id_list) + round + 1]
-
-            len_data_batch_new = len_data_batch + 1
-            len_data_batch_new[len_data_batch_new > self.test_dataset.max_seq_length] = self.test_dataset.max_seq_length
-
-            len_hist_batch_new = len_hist_batch[:,-1:].copy()
-            len_hist_batch_new[:, -1] += 1
-            len_hist_batch_new[len_hist_batch_new > seq_batch_new.shape[-1]] = seq_batch_new.shape[-1]
+                # Greedy action:
+                y_pred = torch.argmax(y_logits_masked, dim=-1).cpu().numpy()
 
 
-            batch = Batch(x_batch=x_batch_new, seq_batch=seq_batch_new, y_batch=y_batch_new,
-                          len_data_batch=len_data_batch_new, len_hist_batch=len_hist_batch_new)
+                # Obtain reward:
+                user_id = x_batch[:, round, self.test_dataset.user_index].astype(int)
+                feedback = self.mat[user_id, y_pred].reshape(-1, 1)
 
-            ptrs = self.buffer.add(batch)
+                df_item_new = self.test_dataset.df_item.loc[y_pred].reset_index(drop=False)
+                item_new = df_item_new[[col.name for col in self.test_dataset.seq_columns[:-1]]].to_numpy() # TODO: note that the last index (-1) indicates the user feedback!
+                item_feedback = np.concatenate([item_new, feedback], axis=-1) # Todo: note that the last index (-1) indicates the user feedback!
 
-            # round += 1
+                # Update buffer:
+                x_batch_new = x_batch[:, -1:, :].copy()
+                reward_batch_new = reward_batch[:, -1:, :].copy()
 
-        res = self.env.step(self.buffer, self.test_seq_length)
+                seq_batch_new = seq_batch[:, -1:, :, :].copy()
+                seq_batch_new[:, :, :, :-1] = seq_batch_new[:, :, :, 1:]
+                seq_batch_new[:, -1, :, -1] = item_feedback
 
-        return res
+                y_batch_new = y_batch[:, -1:, :].copy()
+                y_batch_new[:, -1, :] = self.test_dataset.y_numpy[
+                    np.array(self.test_dataset.session_start_id_list) + round + 1]
+
+                len_data_batch_new = len_data_batch + 1
+                len_data_batch_new[len_data_batch_new > self.test_dataset.max_seq_length] = self.test_dataset.max_seq_length
+
+                len_hist_batch_new = len_hist_batch[:,-1:].copy()
+                len_hist_batch_new[:, -1] += 1
+                len_hist_batch_new[len_hist_batch_new > seq_batch_new.shape[-1]] = seq_batch_new.shape[-1]
+
+
+                batch = Batch(x_batch=x_batch_new, seq_batch=seq_batch_new, y_batch=y_batch_new,
+                              len_data_batch=len_data_batch_new, len_hist_batch=len_hist_batch_new)
+
+                ptrs = self.buffer.add(batch)
+
+                # round += 1
+
+            res = self.env.step(self.buffer, self.test_seq_length)
+            all_res[f"{tuple(point)}"] = res
+
+        return all_res
 
 def get_rec_ids(buffer, indices, item_col):
     if len(buffer) == 0:

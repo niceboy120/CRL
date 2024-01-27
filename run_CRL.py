@@ -1,9 +1,9 @@
 import argparse
+import os
 import traceback
 
 import logzero
 import torch
-
 import sys
 
 
@@ -12,7 +12,7 @@ from collector import Collector
 from ctrl import CTRL, CTRLConfig
 
 
-from utils import log_config, set_seed
+from utils import prepare_dir_log, set_seed
 # from inputs import SparseFeatP
 from data import get_DataClass, get_common_args, get_datapath, prepare_dataset
 
@@ -79,7 +79,7 @@ def get_args():
 
 def main(args):
     args = get_common_args(args)
-    log_config(args)
+    MODEL_SAVE_PATH, logger_path = prepare_dir_log(args)
     # NOTE: set seed
     set_seed(args.seed)
 
@@ -107,7 +107,14 @@ def main(args):
     
     trainer = Trainer(model, collector, train_dataset, test_dataset, tconf)
     trainer.train()
-    
+
+    # save the pytorch model:
+    save_path = os.path.join(MODEL_SAVE_PATH, "chkpt", f"[{args.message}]_epoch[{args.epochs}].pt")
+    torch.save(model.state_dict(), save_path)
+
+    # When next time you use the saved model, just do:
+    # model = CTRL(mconf).to(args.device)
+    # model.load_state_dict(torch.load(save_path))
 
 
 if __name__ == "__main__":

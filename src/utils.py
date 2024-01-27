@@ -16,12 +16,7 @@ def set_seed(seed=42):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)  # If using CUDA
-    
-def log_config(args):
-    MODEL_SAVE_PATH, logger_path = prepare_dir_log(args)
-    nowtime = datetime.datetime.fromtimestamp(time.time()).strftime("%Y_%m_%d-%H_%M_%S")
-    logger_path = os.path.join(MODEL_SAVE_PATH, "logs", "[{}]_{}.log".format(args.message, nowtime))
-    logzero.logfile(logger_path)
+
 
 def create_dir(create_dirs):
     """
@@ -41,7 +36,8 @@ def prepare_dir_log(args):
     create_dirs = [os.path.join(".", "saved_models"),
                    os.path.join(".", "saved_models", args.env),
                    MODEL_SAVE_PATH,
-                   os.path.join(MODEL_SAVE_PATH, "logs")]
+                   os.path.join(MODEL_SAVE_PATH, "logs"),
+                   os.path.join(MODEL_SAVE_PATH, "chkpt")]
     create_dir(create_dirs)
 
     nowtime = datetime.datetime.fromtimestamp(time.time()).strftime("%Y_%m_%d-%H_%M_%S")

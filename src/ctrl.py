@@ -204,7 +204,7 @@ class PatchEmb(nn.Module):
         seq_values = input_from_feature_columns(seq.reshape(-1, num_seq_features, len_state), self.config.seq_columns, self.seq_embedding, self.seq_index, support_dense=True, device=x.device)
         len_hist_reshape = len_hist.reshape(-1)
 
-        mask = torch.arange(reward.size(1)).expand(len(len_data), reward.size(1)) < len_data.unsqueeze(1)
+        mask = torch.arange(reward.size(1)).expand(len(len_data), reward.size(1)).to(len_data.device) < len_data.unsqueeze(1)
         mask = mask.view(-1)
 
         # from einops.layers.torch import Rearrange
@@ -222,7 +222,7 @@ class PatchEmb(nn.Module):
         seq_tensor_masked = seq_tensor[mask]
         len_hist_masked = len_hist_reshape[mask]
 
-        packed_input = pack_padded_sequence(seq_tensor_masked, len_hist_masked, batch_first=True, enforce_sorted=False)
+        packed_input = pack_padded_sequence(seq_tensor_masked, len_hist_masked.cpu(), batch_first=True, enforce_sorted=False)
         packed_output, hn = self.sequence_embedding(packed_input)
         output, _ = pad_packed_sequence(packed_output, batch_first=True)
 
