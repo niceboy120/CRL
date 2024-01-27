@@ -1,6 +1,9 @@
 import os
 import pickle
 import pandas as pd
+from numba import njit
+from tqdm import tqdm
+import numpy as np
 
 from .utils import get_seq_target_and_indices, get_statistics
 
@@ -69,7 +72,7 @@ class BaseData:
         if augment_type == 'seq':
             print("Augment Sequence Data")
             target_df, hist_seq_dict, to_go_seq_dict = self.augment_sequence(df, target_df, df_item, hist_seq_dict, to_go_seq_dict, 
-                                                                             seq_columns, time_field_name, augment_rate, augment_strategies)
+                                                                             seq_columns, max_item_list_len, len_reward_to_go, time_field_name, augment_rate, augment_strategies,)
 
         # Step 2: get the reward statistics.
         df_seq_rewards = get_statistics(df, df_user, df_item, target_df, to_go_seq_dict,
@@ -141,154 +144,319 @@ class BaseData:
         return df
 
     def augment_sequence(self, df_data:pd.DataFrame, target_df:pd.DataFrame, df_item:pd.DataFrame,
-                         hist_seq_dict:dict, to_go_seq_dict:dict, seq_columns:list,
+                         hist_seq_dict:dict, to_go_seq_dict:dict, seq_columns:list, max_item_list_len:int, len_reward_to_go:int,
                          time_field_name:str, augment_rate:float=0.1, strategies:list[str]=['random']):
-        from tqdm import tqdm
-        import numpy as np
 
         if augment_rate == 0:
             return target_df, hist_seq_dict, to_go_seq_dict
         # augment sequential data
         hist_len, to_go_len = hist_seq_dict['item_id_list'].shape[-1], to_go_seq_dict['item_id_list'].shape[-1]
-        augment_data = {}
-        augment_idxs = np.arange(len(target_df))[np.random.uniform(size=len(target_df)) < augment_rate]
-        orig_len_per_uid = target_df.groupby('user_id').size()
-        for idx, uid in tqdm(zip(augment_idxs, target_df.iloc[augment_idxs]['user_id']), 
-                             total=len(augment_idxs), desc='generate augmentation data'):
+        # augment_data = {}
+
+        if augment_rate < 1:
+            all_ids = np.random.permutation(np.arange(len(target_df)))
+            augment_idxs = all_ids[:int(augment_rate * len(target_df))]
+        else:
+            augment_idxs = np.arange(len(target_df)).repeat(int(augment_rate))
+
+        # augment_idxs = np.arange(len(target_df))[np.random.uniform(size=len(target_df)) < augment_rate]
+
+        # orig_len_per_uid = target_df.groupby('user_id').size()
+
+        related_user_id = target_df['user_id'].to_numpy()[augment_idxs]
+
+        df_added_list = []
+
+
+        df_data = df_data.join(df_item["tags"].apply(set), on="item_id", how="left")
+
+        for idx, uid in tqdm(zip(augment_idxs, related_user_id), total=len(augment_idxs), desc='generate augmentation data'):
             # get all user's available items
             user_interactions = df_data[df_data['user_id'] == uid]
-            user_items = user_interactions['item_id']
+            user_items = user_interactions['item_id'].to_numpy()
             # history recommended items
             hist_item_list = hist_seq_dict['item_id_list'][idx].tolist()
             recommended = set(hist_item_list)
-            available_mask = user_items.apply(lambda x: x not in recommended)  # not recommended
+            # available_mask = user_items.apply(lambda x: x not in recommended)  # not recommended
+
+            func = lambda x: x not in recommended
+            func = np.vectorize(func)
+            available_mask = func(user_items)
+
             # check available items
-            if len(user_items[available_mask].unique()) < (to_go_len * 2 - 1):
+            if len(np.unique(user_items[available_mask])) < (to_go_len * 2 - 1):
                 continue
-            if not uid in augment_data:
-                augment_data[uid] = {
-                    'orig_idx': idx,
-                    'aug_len': 0,
-                    'hist_dict': [],
-                    'to_go_dict': [],
-                    'target': [],
-                }
+
             # generate specific sequence for augmentation, then a random sequence for padding
             for strategy in strategies:
                 if strategy == 'random':
                     # random pick from available items
-                    selected_inters = user_interactions[available_mask].sample(n=to_go_len*2-1, replace=False)
+                    all_ids = np.random.choice(len(available_mask), size=to_go_len*2-1, replace=False)
                 else:
                     if strategy == 'rating':
                         # pick items with the highest rating
-                        optimal_inters = user_interactions[available_mask].nlargest(n=to_go_len, columns='rating', keep='all')
-                        optimal_inters = optimal_inters.sample(n=to_go_len)  # so it's random for each state
+                        rating_user_inters = user_interactions['rating'].to_numpy()[available_mask]
+                        sampled_indices = nlargest_indices(rating_user_inters, to_go_len)
+
                     elif strategy == 'diversity':
                         # greedily select items to (NOTE:approximately) maximize togo's diversity
-                        available_interactions = user_interactions[available_mask].join(df_item[['tags']], on='item_id', how='left')
-                        available_interactions['tags'] = available_interactions['tags'].apply(lambda x: set(x))
+                        available_interactions_tags = user_interactions[available_mask]['tags'].to_list()
+
                         if False:
                             # TODO: if we take history items into account, then the initial tags set should be history tags
-                            # here is an example
-                            hist_mask = user_items.apply(lambda x: x in hist_item_list[-5:])  # recent
-                            hist_interactions = user_interactions[hist_mask].join(df_item, on='item_id', how='left')
-                            hist_tags = set(hist_interactions['tags'].explode().to_list())
-                        optimal_inters = []
-                        cur_tags, candidate_interactions = set(), available_interactions
-                        for _ in range(to_go_len):
-                            if len(candidate_interactions) == 0:
-                                # now that all item tags has been used, just randomly select one (no repeat)
-                                available_items = available_interactions['item_id']
-                                optimal_items = [inter['item_id'] for inter in optimal_inters]
-                                available_interactions = available_interactions[available_items.apply(lambda x: x not in optimal_items)]
-                                cur_inter = available_interactions.iloc[np.random.randint(len(available_interactions))]
-                                cur_tags = cur_inter['tags']
-                            else:
-                                # select from candidate interaction, update tags
-                                cur_inter = candidate_interactions.iloc[np.random.randint(len(candidate_interactions))]
-                                cur_tags = cur_tags | cur_inter['tags']
-                            optimal_inters.append(cur_inter)
-                            overlapped = available_interactions['tags'].apply(lambda x: len(cur_tags & x))
-                            candidate_interactions = available_interactions[overlapped == 0]
-                        optimal_inters = pd.DataFrame(optimal_inters)[[col for col in df_data.columns]]
+                            pass
+
+                        # optimal_inters = []
+                        sampled_indices = np.zeros(to_go_len, dtype=int)
+                        sample_a_diverse_seq(sampled_indices, available_interactions_tags, to_go_len)
+                        # cur_tags = set()
+                        # candidate_tags = []
+                        # available_ids = []
+
+                        # for id_k in range(to_go_len):
+                        #     if len(candidate_tags) == 0:
+                        #         candidate_tags = available_interactions_tags
+                        #         available_ids = np.arange(len(available_interactions_tags))
+                        #
+                        #     # else:
+                        #     # select from candidate interaction, update tags
+                        #     random_id = np.random.randint(len(candidate_tags))
+                        #     cur_inter = candidate_tags[random_id]
+                        #     cur_tags = cur_tags | set(cur_inter)
+                        #
+                        #     sampled_indices[id_k] = available_ids[random_id]
+                        #     func_overlap = np.vectorize(lambda x: len(cur_tags & x) == 0)
+                        #     satisfied_ids = func_overlap(candidate_tags)
+                        #     available_ids = available_ids[satisfied_ids]
+                        #     candidate_tags = candidate_tags[satisfied_ids]
+
+                        # optimal_inters = pd.DataFrame(optimal_inters)[[col for col in df_data.columns]]
                     # at last we randomly select items to pad
-                    optimal_items = optimal_inters['item_id'].to_list()
-                    rest_mask = available_mask & user_items.apply(lambda x: x not in optimal_items)  # remove previously selected
-                    selected_inters = pd.concat([optimal_inters, user_interactions[rest_mask].sample(n=to_go_len-1, replace=False)])
+
+                    available_mask_rest = np.arange(len(available_mask))
+                    available_mask_rest[sampled_indices] = -1
+                    available_mask_rest = available_mask_rest[available_mask_rest >= 0]
+
+                    id_rest = np.random.choice(len(available_mask_rest), size=to_go_len - 1, replace=False)
+                    available_mask_rest_sample_id = available_mask_rest[id_rest]
+                    all_ids = np.concatenate([sampled_indices, available_mask_rest_sample_id])
+
+                selected_inters = user_interactions.iloc[all_ids].copy()
+
                 assert len(selected_inters) == 2 * to_go_len - 1
-                # set selected inters' time to 0 (actually this seems useless now)
-                selected_inters[time_field_name] = 0
-                selected_inters['date'] = pd.to_datetime(selected_inters[time_field_name], unit='s')
-                selected_inters['day'] = selected_inters['date'].dt.date
-                # convert selected interactions into sequential data (hist, target & to_go)
-                hist_dict = {f'{col.name}_list':np.zeros([to_go_len, hist_len]) for col in seq_columns}
-                to_go_dict = {f'{col.name}_list':np.zeros([to_go_len, to_go_len]) for col in seq_columns}
-                valid_len = hist_item_list.index(0) if 0 in hist_item_list else hist_len
-                cur_hist_dict = {f'{col.name}_list':hist_seq_dict[f'{col.name}_list'][idx][:valid_len].tolist()
-                                 for col in seq_columns}
-                last_item_data = {f'{col.name}_list':[] for col in seq_columns}
-                for cur_idx in range(to_go_len):
-                    # TODO: check the item's order inside seq data
-                    for col in seq_columns:
-                        key_name = f'{col.name}_list'
-                        # update cur_hist data (a manually updated window) 
-                        cur_hist_dict[key_name] = (cur_hist_dict[key_name] + last_item_data[key_name])[-hist_len:]
-                        # set seq values
-                        to_go_dict[key_name][cur_idx] = selected_inters.iloc[cur_idx:cur_idx+to_go_len][col.name].to_numpy().flatten()
-                        hist_dict[key_name][cur_idx][:len(cur_hist_dict[key_name])] = cur_hist_dict[key_name]
-                        # update last item data
-                        last_item_data[key_name] = [selected_inters.iloc[cur_idx][col.name]]
-                augment_data[uid]['hist_dict'].append(hist_dict)
-                augment_data[uid]['to_go_dict'].append(to_go_dict)
-                augment_data[uid]['target'].append(selected_inters.iloc[:to_go_len])
-                augment_data[uid]['aug_len'] += to_go_len
-        # insert generated data into original hist_seq, target_df & to_go_seq
-        aug_data_len = sum([info['aug_len'] for info in augment_data.values()])
-        new_hist_dict = {key: np.empty([aug_data_len + len(target_df), hist_len]) for key in hist_seq_dict}
-        new_to_go_dict = {key: np.empty([aug_data_len + len(target_df), to_go_len]) for key in hist_seq_dict}
-        orig_start_idx, aug_start_idx = 0, 0
-        candidate_users = target_df['user_id'].unique()
-        for uid in tqdm(candidate_users, desc='insert augmentaion data'):
-            assert target_df.iloc[aug_start_idx]['user_id'] == uid
-            orig_len = orig_len_per_uid[uid]
-            if uid in augment_data:
-                augmentation = augment_data[uid]
-                aug_len = augmentation['aug_len']
-                # calculate idx
-                orig_end_idx = orig_start_idx + orig_len
-                raw_start_idx = aug_start_idx + aug_len
-                raw_end_idx = raw_start_idx + orig_len
-                # insert to seq dict
-                for col in seq_columns:
-                    key = f'{col.name}_list'
-                    # augment data & original data
-                    tmp_hist_data = np.concatenate([tmp_dict[key] for tmp_dict in augmentation['hist_dict']])
-                    tmp_to_go_data = np.concatenate([tmp_dict[key] for tmp_dict in augmentation['to_go_dict']])
-                    orig_hist_data = hist_seq_dict[key][orig_start_idx: orig_end_idx]
-                    orig_to_go_data = to_go_seq_dict[key][orig_start_idx: orig_end_idx]
-                    # save into new np array
-                    new_hist_dict[key][aug_start_idx:raw_start_idx] = tmp_hist_data
-                    new_to_go_dict[key][aug_start_idx:raw_start_idx] = tmp_to_go_data
-                    new_hist_dict[key][raw_start_idx:raw_end_idx] = orig_hist_data
-                    new_to_go_dict[key][raw_start_idx:raw_end_idx] = orig_to_go_data
-                # insert to target_df
-                cur_target = pd.concat(augmentation['target'])
-                target_df = pd.concat([target_df[:aug_start_idx], cur_target, target_df[aug_start_idx:]])
-            else:
-                orig_end_idx = orig_start_idx + orig_len
-                raw_start_idx = aug_start_idx
-                raw_end_idx = raw_start_idx + orig_len
-                # insert to seq dict
-                for col in seq_columns:
-                    key = f'{col.name}_list'
-                    # original data
-                    orig_hist_data = hist_seq_dict[key][orig_start_idx: orig_end_idx]
-                    orig_to_go_data = to_go_seq_dict[key][orig_start_idx: orig_end_idx]
-                    # save to new data
-                    new_hist_dict[key][raw_start_idx:raw_end_idx] = orig_hist_data
-                    new_to_go_dict[key][raw_start_idx:raw_end_idx] = orig_to_go_data
-            # increase index
-            orig_start_idx = orig_end_idx
-            aug_start_idx = raw_end_idx
-        target_df.reset_index(drop=True, inplace=True)
-        return target_df, new_hist_dict, new_to_go_dict
+
+                df_added_list.append(selected_inters)
+
+        df_added = pd.concat(df_added_list)
+
+        df_added[time_field_name] = 0  # make sure the augmented data is added in the training set.
+        df_added['date'] = pd.to_datetime(df_added[time_field_name], unit='s')
+        df_added['day'] = df_added['date'].dt.date
+
+        df_new = pd.concat([df_added, df_data]).reset_index(drop=True)
+        df_new_sorted = df_new.sort_values(["user_id", time_field_name])
+
+        target_df_new, hist_seq_dict_new, to_go_seq_dict_new = get_seq_target_and_indices(df_new_sorted, seq_columns, max_item_list_len, len_reward_to_go)
+
+        return target_df_new, hist_seq_dict_new, to_go_seq_dict_new
+
+
+
+    # def augment_sequence(self, df_data:pd.DataFrame, target_df:pd.DataFrame, df_item:pd.DataFrame,
+    #                      hist_seq_dict:dict, to_go_seq_dict:dict, seq_columns:list,
+    #                      time_field_name:str, augment_rate:float=0.1, strategies:list[str]=['random']):
+    #     from tqdm import tqdm
+    #     import numpy as np
+    #
+    #     if augment_rate == 0:
+    #         return target_df, hist_seq_dict, to_go_seq_dict
+    #     # augment sequential data
+    #     hist_len, to_go_len = hist_seq_dict['item_id_list'].shape[-1], to_go_seq_dict['item_id_list'].shape[-1]
+    #     augment_data = {}
+    #     augment_idxs = np.arange(len(target_df))[np.random.uniform(size=len(target_df)) < augment_rate]
+    #     orig_len_per_uid = target_df.groupby('user_id').size()
+    #
+    #     target_df['user_id'].to_numpy()[augment_idxs]
+    #
+    #     for idx, uid in tqdm(zip(augment_idxs, target_df.iloc[augment_idxs]['user_id']), total=len(augment_idxs), desc='generate augmentation data'):
+    #         # get all user's available items
+    #         user_interactions = df_data[df_data['user_id'] == uid]
+    #         user_items = user_interactions['item_id']
+    #         # history recommended items
+    #         hist_item_list = hist_seq_dict['item_id_list'][idx].tolist()
+    #         recommended = set(hist_item_list)
+    #         available_mask = user_items.apply(lambda x: x not in recommended)  # not recommended
+    #         # check available items
+    #         if len(user_items[available_mask].unique()) < (to_go_len * 2 - 1):
+    #             continue
+    #         if not uid in augment_data:
+    #             augment_data[uid] = {
+    #                 'orig_idx': idx,
+    #                 'aug_len': 0,
+    #                 'hist_dict': [],
+    #                 'to_go_dict': [],
+    #                 'target': [],
+    #             }
+    #         # generate specific sequence for augmentation, then a random sequence for padding
+    #         for strategy in strategies:
+    #             if strategy == 'random':
+    #                 # random pick from available items
+    #                 selected_inters = user_interactions[available_mask].sample(n=to_go_len*2-1, replace=False)
+    #             else:
+    #                 if strategy == 'rating':
+    #                     # pick items with the highest rating
+    #                     optimal_inters = user_interactions[available_mask].nlargest(n=to_go_len, columns='rating', keep='all')
+    #                     optimal_inters = optimal_inters.sample(n=to_go_len)  # so it's random for each state
+    #                 elif strategy == 'diversity':
+    #                     # greedily select items to (NOTE:approximately) maximize togo's diversity
+    #                     available_interactions = user_interactions[available_mask].join(df_item[['tags']], on='item_id', how='left')
+    #                     available_interactions['tags'] = available_interactions['tags'].apply(lambda x: set(x))
+    #                     if False:
+    #                         # TODO: if we take history items into account, then the initial tags set should be history tags
+    #                         # here is an example
+    #                         hist_mask = user_items.apply(lambda x: x in hist_item_list[-5:])  # recent
+    #                         hist_interactions = user_interactions[hist_mask].join(df_item, on='item_id', how='left')
+    #                         hist_tags = set(hist_interactions['tags'].explode().to_list())
+    #                     optimal_inters = []
+    #                     cur_tags, candidate_interactions = set(), available_interactions
+    #                     for _ in range(to_go_len):
+    #                         if len(candidate_interactions) == 0:
+    #                             # now that all item tags has been used, just randomly select one (no repeat)
+    #                             available_items = available_interactions['item_id']
+    #                             optimal_items = [inter['item_id'] for inter in optimal_inters]
+    #                             available_interactions = available_interactions[available_items.apply(lambda x: x not in optimal_items)]
+    #                             cur_inter = available_interactions.iloc[np.random.randint(len(available_interactions))]
+    #                             cur_tags = cur_inter['tags']
+    #                         else:
+    #                             # select from candidate interaction, update tags
+    #                             cur_inter = candidate_interactions.iloc[np.random.randint(len(candidate_interactions))]
+    #                             cur_tags = cur_tags | cur_inter['tags']
+    #                         optimal_inters.append(cur_inter)
+    #                         overlapped = available_interactions['tags'].apply(lambda x: len(cur_tags & x))
+    #                         candidate_interactions = available_interactions[overlapped == 0]
+    #                     optimal_inters = pd.DataFrame(optimal_inters)[[col for col in df_data.columns]]
+    #                 # at last we randomly select items to pad
+    #                 optimal_items = optimal_inters['item_id'].to_list()
+    #                 rest_mask = available_mask & user_items.apply(lambda x: x not in optimal_items)  # remove previously selected
+    #                 selected_inters = pd.concat([optimal_inters, user_interactions[rest_mask].sample(n=to_go_len-1, replace=False)])
+    #             assert len(selected_inters) == 2 * to_go_len - 1
+    #             # set selected inters' time to 0 (actually this seems useless now)
+    #             selected_inters[time_field_name] = 0
+    #             selected_inters['date'] = pd.to_datetime(selected_inters[time_field_name], unit='s')
+    #             selected_inters['day'] = selected_inters['date'].dt.date
+    #             # convert selected interactions into sequential data (hist, target & to_go)
+    #             hist_dict = {f'{col.name}_list':np.zeros([to_go_len, hist_len]) for col in seq_columns}
+    #             to_go_dict = {f'{col.name}_list':np.zeros([to_go_len, to_go_len]) for col in seq_columns}
+    #             # valid_len = hist_item_list.index(0) if 0 in hist_item_list else hist_len
+    #             valid_len = hist_seq_dict['len_hist'][idx]
+    #             cur_hist_dict = {f'{col.name}_list':hist_seq_dict[f'{col.name}_list'][idx][:valid_len].tolist()
+    #                              for col in seq_columns}
+    #             last_item_data = {f'{col.name}_list':[] for col in seq_columns}
+    #             for cur_idx in range(to_go_len):
+    #                 # TODO: check the item's order inside seq data
+    #                 for col in seq_columns:
+    #                     key_name = f'{col.name}_list'
+    #                     # update cur_hist data (a manually updated window)
+    #                     cur_hist_dict[key_name] = (cur_hist_dict[key_name] + last_item_data[key_name])[-hist_len:]
+    #                     # set seq values
+    #                     to_go_dict[key_name][cur_idx] = selected_inters.iloc[cur_idx:cur_idx+to_go_len][col.name].to_numpy().flatten()
+    #                     hist_dict[key_name][cur_idx][:len(cur_hist_dict[key_name])] = cur_hist_dict[key_name]
+    #                     # update last item data
+    #                     last_item_data[key_name] = [selected_inters.iloc[cur_idx][col.name]]
+    #             augment_data[uid]['hist_dict'].append(hist_dict)
+    #             augment_data[uid]['to_go_dict'].append(to_go_dict)
+    #             augment_data[uid]['target'].append(selected_inters.iloc[:to_go_len])
+    #             augment_data[uid]['aug_len'] += to_go_len
+    #
+    #
+    #     # insert generated data into original hist_seq, target_df & to_go_seq
+    #     aug_data_len = sum([info['aug_len'] for info in augment_data.values()])
+    #     new_hist_dict = {key: np.empty([aug_data_len + len(target_df), hist_len]) for key in hist_seq_dict}
+    #     new_to_go_dict = {key: np.empty([aug_data_len + len(target_df), to_go_len]) for key in hist_seq_dict}
+    #     orig_start_idx, aug_start_idx = 0, 0
+    #     candidate_users = target_df['user_id'].unique()
+    #     for uid in tqdm(candidate_users, desc='insert augmentaion data'):
+    #         assert target_df.iloc[aug_start_idx]['user_id'] == uid
+    #         orig_len = orig_len_per_uid[uid]
+    #         if uid in augment_data:
+    #             augmentation = augment_data[uid]
+    #             aug_len = augmentation['aug_len']
+    #             # calculate idx
+    #             orig_end_idx = orig_start_idx + orig_len
+    #             raw_start_idx = aug_start_idx + aug_len
+    #             raw_end_idx = raw_start_idx + orig_len
+    #             # insert to seq dict
+    #             for col in seq_columns:
+    #                 key = f'{col.name}_list'
+    #                 # augment data & original data
+    #                 tmp_hist_data = np.concatenate([tmp_dict[key] for tmp_dict in augmentation['hist_dict']])
+    #                 tmp_to_go_data = np.concatenate([tmp_dict[key] for tmp_dict in augmentation['to_go_dict']])
+    #                 orig_hist_data = hist_seq_dict[key][orig_start_idx: orig_end_idx]
+    #                 orig_to_go_data = to_go_seq_dict[key][orig_start_idx: orig_end_idx]
+    #                 # save into new np array
+    #                 new_hist_dict[key][aug_start_idx:raw_start_idx] = tmp_hist_data
+    #                 new_to_go_dict[key][aug_start_idx:raw_start_idx] = tmp_to_go_data
+    #                 new_hist_dict[key][raw_start_idx:raw_end_idx] = orig_hist_data
+    #                 new_to_go_dict[key][raw_start_idx:raw_end_idx] = orig_to_go_data
+    #             # insert to target_df
+    #             cur_target = pd.concat(augmentation['target'])
+    #             target_df = pd.concat([target_df[:aug_start_idx], cur_target, target_df[aug_start_idx:]])
+    #         else:
+    #             orig_end_idx = orig_start_idx + orig_len
+    #             raw_start_idx = aug_start_idx
+    #             raw_end_idx = raw_start_idx + orig_len
+    #             # insert to seq dict
+    #             for col in seq_columns:
+    #                 key = f'{col.name}_list'
+    #                 # original data
+    #                 orig_hist_data = hist_seq_dict[key][orig_start_idx: orig_end_idx]
+    #                 orig_to_go_data = to_go_seq_dict[key][orig_start_idx: orig_end_idx]
+    #                 # save to new data
+    #                 new_hist_dict[key][raw_start_idx:raw_end_idx] = orig_hist_data
+    #                 new_to_go_dict[key][raw_start_idx:raw_end_idx] = orig_to_go_data
+    #         # increase index
+    #         orig_start_idx = orig_end_idx
+    #         aug_start_idx = raw_end_idx
+    #     target_df.reset_index(drop=True, inplace=True)
+    #     return target_df, new_hist_dict, new_to_go_dict
+
+
+@njit
+def nlargest_indices(arr, n):
+    """
+    Function to find the indices of the n largest elements in an array.
+    """
+    # Use numpy.argpartition to get indices of the n largest elements
+    partitioned_indices = np.argpartition(arr, -n)[-n:]
+    # Sort these indices by the corresponding values in descending order
+    indices = partitioned_indices[np.argsort(arr[partitioned_indices])[::-1]]
+    res = np.random.permutation(indices)
+    return res
+
+
+import numpy as np
+from numba import njit, types
+from numba.typed import List
+
+# @njit
+def sample_a_diverse_seq(sampled_indices, available_interactions_tags, to_go_len):
+    candidate_tags = np.array(available_interactions_tags)  # Assuming available_interactions_tags can be an array
+    available_ids = np.arange(len(available_interactions_tags))
+    cur_tags = set()  # Keep an eye on set usage with Numba
+
+    for id_k in range(to_go_len):
+        if len(candidate_tags) == 0:
+            candidate_tags = np.array(available_interactions_tags)
+            available_ids = np.arange(len(available_interactions_tags))
+
+        random_id = np.random.randint(len(candidate_tags))
+        cur_inter = candidate_tags[random_id]
+        cur_tags = set(cur_inter)
+
+        sampled_indices[id_k] = available_ids[random_id]
+        satisfied_ids = np.array([len(cur_tags & set(x)) == 0 for x in candidate_tags])
+
+        available_ids = available_ids[satisfied_ids]
+        candidate_tags = candidate_tags[satisfied_ids]
+
+    return sampled_indices

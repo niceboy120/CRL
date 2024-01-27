@@ -56,7 +56,7 @@ def get_args():
     parser.add_argument("--lr", type=float, default=1e-2)
     parser.add_argument("--seed", type=int, default=2024)
 
-    parser.add_argument("--cuda_id", type=int, default=2)
+    parser.add_argument("--cuda", type=int, default=2)
     parser.add_argument("--message", type=str, default="test")
 
     # parser.add_argument("--env", type=str, default="KuaiRand-1K")
@@ -69,7 +69,7 @@ def get_args():
     
     device = 'cpu'
     if torch.cuda.is_available():
-        device = f'cuda:{args.cuda_id}'
+        device = f'cuda:{args.cuda}'
         # model = torch.nn.DataParallel(model).to(device)
     args.device = device
 
