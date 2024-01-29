@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import torch.optim as optim
 import torch.nn.functional as F
+from tqdm import tqdm
 
 from .DDPG_ESMM import DDPG_wESMMAgent
 import warnings
@@ -11,9 +12,12 @@ warnings.filterwarnings("ignore")
 
 
 class TD3_ESMMBCAgent(DDPG_wESMMAgent):
-    def __init__(self, env: gym.Env, actor_name, arguments):
+    def __init__(self, device, action_dim, cate_dim, num_numfeat, actor_name, arguments):
         super_args = dict(
-            env=env,
+            device=device,
+            action_dim=action_dim,
+            cate_dim=cate_dim,
+            num_numfeat=num_numfeat,
             actor_name=actor_name,
             embed_dim=arguments.embed_dim,
             ou_noise_theta=arguments.ou_noise_theta,
@@ -44,13 +48,13 @@ class TD3_ESMMBCAgent(DDPG_wESMMAgent):
         state = transition['state']
         nstate = transition['nstate']
         # TD3BC approach 1: no need for cate features
-        state, nstate = self.state_normalize(state), self.state_normalize(nstate)
+        # state, nstate = self.state_normalize(state), self.state_normalize(nstate)
         # end
 
-        cate_features, num_features = torch.LongTensor(state[:, :-1]).to(self.device), \
-                                      torch.FloatTensor(state[:, [-1]]).to(self.device)
-        ncate_features, nnum_features = torch.LongTensor(nstate[:, :-1]).to(self.device), \
-                                        torch.FloatTensor(nstate[:, [-1]]).to(self.device)
+        cate_features, num_features = torch.LongTensor(state[:, :-self.num_numfeat]).to(self.device), \
+                                      torch.FloatTensor(state[:, -self.num_numfeat:]).to(self.device)
+        ncate_features, nnum_features = torch.LongTensor(nstate[:, :-self.num_numfeat]).to(self.device), \
+                                        torch.FloatTensor(nstate[:, -self.num_numfeat:]).to(self.device)
 
         action = torch.FloatTensor(transition['action']).to(self.device)
         reward = torch.FloatTensor(transition['reward'].reshape(-1, 2)).to(self.device)
@@ -137,7 +141,7 @@ class TD3_ESMMBCAgent(DDPG_wESMMAgent):
         actor_lossls2 = []
         critic_lossls1 = []
         critic_lossls2 = []
-        for i in range(update_steps):
+        for i in tqdm(range(update_steps), desc="Training", total=update_steps):
             tb = self.memory.sample_batch()
             transition = self.process_batch(tb)
             # IPS weight

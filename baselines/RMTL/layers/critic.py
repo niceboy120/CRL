@@ -9,7 +9,7 @@ class Critic(torch.nn.Module):
         self.embedding = EmbeddingLayer(categorical_field_dims, embed_dim)
         self.numerical_layer = torch.nn.Linear(numerical_num, embed_dim)
         self.action_layer = torch.nn.Linear(1, embed_dim)
-        self.embed_output_dim = (len(categorical_field_dims) + numerical_num + 1) * embed_dim
+        self.embed_output_dim = (len(categorical_field_dims) + 1 + 1) * embed_dim
         self.bottom = MultiLayerPerceptron(self.embed_output_dim, bottom_mlp_dims, dropout, output_layer=False)
         self.tower = MultiLayerPerceptron(bottom_mlp_dims[-1], tower_mlp_dims, dropout)
 
@@ -29,7 +29,7 @@ class CriticNeg(torch.nn.Module):
         self.embedding = EmbeddingLayer(categorical_field_dims, embed_dim)
         self.numerical_layer = torch.nn.Linear(numerical_num, embed_dim)
         self.action_layer = torch.nn.Linear(1, embed_dim)
-        self.embed_output_dim = (len(categorical_field_dims) + numerical_num + 1) * embed_dim
+        self.embed_output_dim = (len(categorical_field_dims) + 1 + 1) * embed_dim
         self.bottom = MultiLayerPerceptron(self.embed_output_dim, bottom_mlp_dims, dropout, output_layer=False)
         self.tower = MultiLayerPerceptron(bottom_mlp_dims[-1], tower_mlp_dims, dropout)
         self.activate = torch.nn.ReLU()

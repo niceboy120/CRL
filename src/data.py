@@ -1,6 +1,7 @@
 import argparse
 import os
 
+import logzero
 import numpy as np
 from inputs import DenseFeat, SparseFeat, SparseFeatP, VarLenSparseFeat
 from state_action_return_dataset import StateActionReturnDataset
@@ -213,6 +214,7 @@ def prepare_dataset(args):
         x_columns, reward_columns, seq_columns, args.max_item_list_len, args.len_reward_to_go, args.reload, 
         dataset.time_field_name, args.augment_type, args.augment_rate, args.augment_strategies)
 
+    logzero.logger.info(f"df_seq_rewards.shape: {df_seq_rewards.shape}")
     train_dataset, test_dataset = split_and_construct_dataset(df_user, df_item,
                                                               x_columns, reward_columns, seq_columns, y_column,
                                                               df_seq_rewards, hist_seq_dict, to_go_seq_dict,

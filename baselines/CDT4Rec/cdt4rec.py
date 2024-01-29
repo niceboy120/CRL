@@ -151,26 +151,18 @@ class PatchEmb(nn.Module):
             batch_first=True
         )
 
+
         self.user_encoder = nn.Sequential(
             nn.Linear(compute_input_dim(config.x_columns), 64),
             nn.ReLU(),
             nn.Linear(64, config.hidden_size)
         )
 
-        # self.patch_embedding = nn.Sequential(
-        #     Rearrange('b t c (h p1) (w p2) -> (b t) (h w) (p1 p2 c)', p1 = p1, p2 = p2),
-        #     nn.Linear(p1*p2*c, iD)
-        # )
-
-        # if 'continuous' in config.action_type:
-        #     self.action_emb = nn.Sequential(nn.Linear(config.num_item, iD), nn.Tanh())
-        # else:
-        #     # +1 for mask
-        #     self.action_emb = nn.Embedding(config.num_item+1, iD)
 
         self.feature_embedding = create_embedding_matrix(config.x_columns, init_std=0.0001, linear=False, sparse=False, device='cpu')
         self.reward_embedding = create_embedding_matrix(config.reward_columns, init_std=0.0001, linear=False, sparse=False, device='cpu')
         self.seq_embedding = create_embedding_matrix(config.seq_columns, init_std=0.0001, linear=False, sparse=False, device='cpu')
+        self.action_embedding = nn.Embedding(config.seq_columns[config.col_item].vocabulary_size, config.seq_columns[config.col_item].embedding_dim, sparse=False, padding_idx=config.seq_columns[config.col_item].padding_idx)
 
         self.feature_index = build_input_features(config.x_columns)
         self.reward_index = build_input_features(config.reward_columns)
@@ -178,12 +170,7 @@ class PatchEmb(nn.Module):
         
         self.global_proj = nn.Sequential(nn.Linear(config.local_D, config.global_D), # +1 for action token
                                          nn.LayerNorm(config.global_D))
-        
-        # self.reward_emb_seqs = nn.Sequential(nn.Linear(1, iD), nn.Tanh())
-        
-        # self.spatial_emb = nn.Parameter(torch.zeros(1, h*w//p1//p2, iD))
-        
-        
+
         self.temporal_emb = nn.Parameter(torch.zeros(1, config.max_seqlens, config.global_D))
 
     
@@ -199,9 +186,13 @@ class PatchEmb(nn.Module):
         num_batch, len_data_with_padding, num_rewards = reward.shape
         num_batch, len_data_with_padding, num_seq_features, len_state = seq.shape
 
+        action = seq[:, :, self.config.col_item, -1].type(torch.LongTensor).to(reward.device)
+
         x_values = input_from_feature_columns(x.reshape(-1, num_features), self.config.x_columns, self.feature_embedding, self.feature_index, support_dense=True, device=x.device)
         reward_values = input_from_feature_columns(reward.reshape(-1, num_rewards), self.config.reward_columns, self.reward_embedding, self.reward_index, support_dense=True, device=x.device)
         seq_values = input_from_feature_columns(seq.reshape(-1, num_seq_features, len_state), self.config.seq_columns, self.seq_embedding, self.seq_index, support_dense=True, device=x.device)
+        # action_values = input_from_feature_columns(action.reshape(-1, 1), self.action_columns, self.action_embedding, self.action_index, support_dense=True, device=x.device)
+
         len_hist_reshape = len_hist.reshape(-1)
 
         mask = torch.arange(reward.size(1)).expand(len(len_data), reward.size(1)).to(len_data.device) < len_data.unsqueeze(1)
@@ -215,6 +206,7 @@ class PatchEmb(nn.Module):
         x_tensor = torch.cat(x_values, dim=1).reshape(num_batch, len_data_with_padding, num_features, -1)
         reward_tensor = torch.cat(reward_values, dim=1).reshape(num_batch, len_data_with_padding, num_rewards, -1)
         seq_tensor = torch.cat(seq_values, dim=-1).squeeze(1)
+        action_tensor = self.action_embedding(action).unsqueeze(2)
 
         user_representation = self.user_encoder(x_tensor)
 
@@ -234,28 +226,15 @@ class PatchEmb(nn.Module):
 
         gru_output_recovered = gru_output.reshape(num_batch, len_data_with_padding, 1, -1)
 
-        local_tokens = torch.cat([user_representation, reward_tensor, gru_output_recovered], dim=2)
+        local_tokens = torch.cat([reward_tensor, user_representation, gru_output_recovered, action_tensor], dim=2)
 
         global_tokens = self.global_proj(gru_output_recovered.squeeze(2))
 
         return local_tokens, global_tokens, self.temporal_emb[:, :len_data_with_padding]
 
 
-        # if 'xconv' in self.config.model_name or 'stack' in self.config.model_name:
-        #     global_state_tokens = 0
-        # else:
-        #     global_state_tokens = self.sequence_embedding(seq_tensor) + self.temporal_emb[:, :T]
-        # local_action_tokens = self.action_emb(seq.reshape(-1, 1)).reshape(B, T, -1).unsqueeze(2) # B T 1 iD
 
-        # if 'rwd' in self.config.model_name:
-        #     local_reward_tokens = self.reward_emb(rewards.reshape(-1, 1)).reshape(B, T, -1).unsqueeze(2)
-        #     local_tokens = torch.cat((local_action_tokens, local_state_tokens, local_reward_tokens), dim=2)
-        # else:
-        #     local_tokens = torch.cat((local_action_tokens, local_state_tokens), dim=2)
-
-        # return local_tokens, global_state_tokens, self.temporal_emb[:, :T]
-
-class CTRL(nn.Module):
+class CDT4Rec(nn.Module):
     
     def __init__(self, config):
         super().__init__()
@@ -368,34 +347,14 @@ class CTRL(nn.Module):
 
         local_tokens, global_state_tokens, temporal_emb = self.token_emb(x, reward, seq, len_data, len_hist)
         local_tokens = self.local_pos_drop(local_tokens)
-        if ('xconv' not in self.config.model_name) and ('stack' not in self.config.model_name):
-            global_state_tokens = self.global_pos_drop(global_state_tokens)
+
+        global_state_tokens = self.global_pos_drop(global_state_tokens)
         
         B, T, P, d = local_tokens.size()
         local_atts, global_atts = [], []
-        if 'stack' in self.config.model_name:
-            for i, blk in enumerate(self.blocks):
-                local_tokens, local_att = blk.local_block(local_tokens.reshape(-1, P, d))
-                local_att = local_att.detach()
-                # for return attention maps
-                # local_atts.append(local_att)
-            global_state_tokens = self.local_global_proj(local_tokens.reshape(B, T, -1)) + temporal_emb
-            for i, blk in enumerate(self.blocks):
-                global_state_tokens, global_att = blk.global_block(global_state_tokens, blk.mask)
-                global_att = global_att.detach()
-                # for return attention maps
-                # global_atts.append(global_att)
-        else:
-            for i, blk in enumerate(self.blocks):
 
-                local_tokens, global_state_tokens, local_att, global_att = blk(local_tokens, global_state_tokens, temporal_emb)
-
-                # local_att = local_att.detach()
-                # global_att = global_att.detach()
-
-                # for return attention maps
-                # local_atts.append(local_att)
-                # global_atts.append(global_att)
+        for i, blk in enumerate(self.blocks):
+            local_tokens, global_state_tokens, local_att, global_att = blk(local_tokens, global_state_tokens, temporal_emb)
         
         # Create the mask using len_data
         mask = torch.arange(T).unsqueeze(0).to(len_data.device) >= len_data.unsqueeze(1)
@@ -417,7 +376,7 @@ class CTRL(nn.Module):
 #------------------------------------------------------------------------
     
         
-class CTRLConfig:
+class CDT4RecConfig:
     embd_pdrop = 0.1
     resid_pdrop = 0.1
     attn_pdrop = 0.1
@@ -434,10 +393,10 @@ class CTRLConfig:
         
         
 if __name__ == "__main__":
-    mconf = CTRLConfig(4, img_size = (4, 84, 84), patch_size = (7, 7), context_length=30, pos_drop=0.1, resid_drop=0.1,
+    mconf = CDT4RecConfig(4, img_size = (4, 84, 84), patch_size = (7, 7), context_length=30, pos_drop=0.1, resid_drop=0.1,
                           N_head=8, D=192, local_N_head=4, local_D=64, model_name='star', max_timestep=100, n_layer=6, C=4, max_seqlens=30)
 
-    model = CTRL(mconf)
+    model = CDT4Rec(mconf)
     model = model.cuda()
     dummy_states = torch.randn(3, 28, 4, 84, 84).cuda()
     dummy_actions = torch.randint(0, 4, (3, 28, 1), dtype=torch.long).cuda()

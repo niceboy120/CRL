@@ -17,7 +17,7 @@ from sklearn.metrics import roc_auc_score
 # import sys
 # sys.path.extend(["baselines/RMTL", "baselines"])
 
-from baselines.RMTL.dataset.rtrl import RetailRocketRLDataset
+# from baselines.RMTL.dataset.rtrl import RetailRocketRLDataset
 from baselines.RMTL.slmodels.esmm import ESMMModel
 from baselines.RMTL.slmodels.singletask import SingleTaskModel
 from baselines.RMTL.slmodels.ple import PLEModel
@@ -74,12 +74,13 @@ def sltrain(model, optimizer, data_loader, criterion, device, polisher=None, log
     epoch_loss = []
     loader = tqdm.tqdm(data_loader, smoothing=0, mininterval=1.0)
     for i, (_, categorical_fields, numerical_fields, labels) in enumerate(loader):
-        categorical_fields, numerical_fields, labels = categorical_fields.to(device), numerical_fields.to(device), labels.to(device)
+        categorical_fields, numerical_fields, labels = categorical_fields.to(device), numerical_fields.to(device), labels.float().to(device)
         y = model(categorical_fields, numerical_fields)
         if polisher is not None:
             loss = polisher.polish_loss(categorical_fields, numerical_fields, labels, y)
+            loss
         else:
-            loss_list = [criterion(y[k], labels[:, k].float()) for k in range(labels.size(1))]
+            loss_list = [criterion(y[k], labels[:, k]) for k in range(labels.size(1))]
             loss = 0
             for item in loss_list:
                 loss += item

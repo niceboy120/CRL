@@ -160,28 +160,27 @@ class ActionNormalizer(gym.ActionWrapper):
 
 
 class RlLossPolisher:
-    def __init__(self, env, model_name, lambda_=0.5):
+    def __init__(self, agent, device, action_dim, cate_dim, num_numfeat, model_name, lambda_=0.5):
         # tuning param
         self.lambda_ = lambda_
 
         # dynamic path
-        self.rl_path = f"./chkpt/RL/res_TD3BC_{model_name}"
-        if not os.path.isdir(self.rl_path):
-            raise FileNotFoundError
+        # self.rl_path = f"./chkpt/RL/res_TD3BC_{model_name}"
+        # if not os.path.isdir(self.rl_path):
+        #     raise FileNotFoundError
         # fixed params
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        self.categorical_field_dims = env.field_dims
-        self.num_dim = 1
-        self.task_num = env.action_space.shape[0]
-        self.pretrain_path = self.rl_path+f"/rt_{model_name}.pt"
+        self.agent = agent
+        self.device = device
+        self.categorical_field_dims = cate_dim
+        self.num_numfeat = num_numfeat
+        self.task_num = action_dim
         self.embed_dim = 128
         self.bottom_mlp_dims = (512, 256)
         self.tower_mlp_dims = (128, 64)
         self.drop_out = 0.2
 
         # define the network
-        # self.pretain_actor = ESMMModel(self.categorical_field_dims, self.num_dim, self.embed_dim, self.bottom_mlp_dims,
+        # self.pretain_actor = ESMMModel(self.categorical_field_dims, self.num_numfeat, self.embed_dim, self.bottom_mlp_dims,
         #                                self.tower_mlp_dims,
         #                                self.task_num, self.drop_out).to(self.device)
         # self.pretain_actor.load_state_dict(torch.load(self.pretrain_path))
@@ -189,20 +188,23 @@ class RlLossPolisher:
 
         # TODO: polish to code, use a general critic network to contain multiple task;
         #  以及是否丧失了MDP特性，critic是R^t_{\pi}，此处无pi；暂时作为logging policy对待
-        self.critic1 = CriticNeg(self.categorical_field_dims, self.num_dim, self.embed_dim, self.bottom_mlp_dims,
-                              self.tower_mlp_dims, self.drop_out).to(self.device)
+        # self.critic1 = CriticNeg(self.categorical_field_dims, self.num_numfeat, self.embed_dim, self.bottom_mlp_dims,
+        #                       self.tower_mlp_dims, self.drop_out).to(self.device)
+        #
+        # self.critic2 = CriticNeg(self.categorical_field_dims, self.num_numfeat, self.embed_dim, self.bottom_mlp_dims,
+        #                       self.tower_mlp_dims, self.drop_out).to(self.device)
+        #
+        # state_dict1 = torch.load(self.rl_path + "/critic1.pth", map_location=lambda storage, loc: storage)
+        # self.critic1.load_state_dict(state_dict1)
+        # state_dict2 = torch.load(self.rl_path + "/critic2.pth", map_location=lambda storage, loc: storage)
+        # self.critic2.load_state_dict(state_dict2)
+        self.critic1 = agent.critic1
+        self.critic2 = agent.critic2
 
-        self.critic2 = CriticNeg(self.categorical_field_dims, self.num_dim, self.embed_dim, self.bottom_mlp_dims,
-                              self.tower_mlp_dims, self.drop_out).to(self.device)
-
-        state_dict1 = torch.load(self.rl_path + "/critic1.pth", map_location=lambda storage, loc: storage)
-        self.critic1.load_state_dict(state_dict1)
-        state_dict2 = torch.load(self.rl_path + "/critic2.pth", map_location=lambda storage, loc: storage)
-        self.critic2.load_state_dict(state_dict2)
 
     def polish_loss(self, categorical_fields, numerical_fields, labels, y):
         # default two task here
-        slloss = [torch.nn.BCELoss(reduction='none')(y[i],labels[:,i]) for i in range(2)]
+        slloss = [torch.nn.MSELoss(reduction='none')(y[i],labels[:,i]) for i in range(2)]
 
         q_weight = [self.critic1(categorical_fields, numerical_fields, torch.unsqueeze(y[0], 1)),
                     self.critic2(categorical_fields, numerical_fields, torch.unsqueeze(y[1], 1))]

@@ -19,7 +19,11 @@ warnings.filterwarnings("ignore")
 
 class DDPG_wESMMAgent:
     def __init__(self,
-                 env: gym.Env,
+                 # env: gym.Env,
+                 device,
+                 action_dim,
+                 cate_dim,
+                 num_numfeat,
                  actor_name="esmm",
                  embed_dim=128,
                  bottom_mlp_dims=(512, 256),
@@ -41,17 +45,19 @@ class DDPG_wESMMAgent:
                  pretrain_path="../pretrain",
                  ):
         # system parameters
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.env = env
+        self.device = device
+        # self.env = env
         self.gamma = gamma
-        action_dim = self.env.action_space.shape[0]
-        cate_dim = self.env.field_dims
+        # action_dim = self.env.action_space.shape[0]
+        # cate_dim = self.env.field_dims
+        action_dim=action_dim
+        cate_dim=cate_dim
 
         # training param
         self.actor_lr = actor_lr
         self.critic_lr = critic_lr
         self.pretrain_path = pretrain_path
-        self.memory = ReplayBuffer(cate_dim.shape[0] + 1, action_dim, memory_size, batch_size)
+        self.memory = ReplayBuffer(cate_dim.shape[0] + num_numfeat, action_dim, memory_size, batch_size)
         self.batch_size = batch_size
         self.tau = tau
         self.actor_reg = actor_reg
@@ -62,7 +68,7 @@ class DDPG_wESMMAgent:
 
         # actor param
         self.categorical_field_dims = cate_dim
-        self.num_dim = 1
+        self.num_numfeat = num_numfeat
         self.embed_dim = embed_dim
         self.bottom_mlp_dims = bottom_mlp_dims
         self.tower_mlp_dims = tower_mlp_dims
@@ -71,15 +77,15 @@ class DDPG_wESMMAgent:
         critic_model = CriticNeg
 
         # define actor network
-        self.pretain_actor = get_model(actor_name,self.categorical_field_dims, self.num_dim, self.task_num, 8,
+        self.pretain_actor = get_model(actor_name,self.categorical_field_dims, self.num_numfeat, self.task_num, 8,
                                 self.embed_dim).to(self.device)
 
-        self.critic1 = critic_model(self.categorical_field_dims, self.num_dim, self.embed_dim, self.bottom_mlp_dims,
+        self.critic1 = critic_model(self.categorical_field_dims, self.num_numfeat, self.embed_dim, self.bottom_mlp_dims,
                               self.tower_mlp_dims, self.drop_out).to(self.device)
 
         self.critic2 = deepcopy(self.critic1)
 
-        self.pretain_actor.load_state_dict(torch.load(self.pretrain_path+f"/rt_{actor_name}_0.0.pt"))
+        self.pretain_actor.load_state_dict(torch.load(self.pretrain_path+f"/rt_{actor_name}_0.0.pt", map_location=device))
         self.pretain_actor.eval()
         self.actor = deepcopy(self.pretain_actor)
         self.critic1.embedding.load_state_dict(self.actor.embedding.state_dict())
@@ -114,8 +120,8 @@ class DDPG_wESMMAgent:
     def select_action(self, state: np.ndarray) -> np.ndarray:
         if len(state.shape) == 1:  # deal with 1-d dimension
             state = np.expand_dims(state, 0)
-        cate_features, num_features = torch.LongTensor(state[:, :-1]).to(self.device), \
-                                      torch.FloatTensor(state[:, [-1]]).to(self.device)
+        cate_features, num_features = torch.LongTensor(state[:, :-self.num_numfeat]).to(self.device), \
+                                      torch.FloatTensor(state[:, -self.num_numfeat:]).to(self.device)
         # print("features:",cate_features)
         selected_action = torch.stack(self.actor(cate_features, num_features), 1)
         # print(selected_action)
@@ -130,10 +136,10 @@ class DDPG_wESMMAgent:
     def process_batch(self, transition):
         state = transition['state']
         nstate = transition['nstate']
-        cate_features, num_features = torch.LongTensor(state[:, :-1]).to(self.device), \
-                                      torch.FloatTensor(state[:, [-1]]).to(self.device)
-        ncate_features, nnum_features = torch.LongTensor(nstate[:, :-1]).to(self.device), \
-                                        torch.FloatTensor(nstate[:, [-1]]).to(self.device)
+        cate_features, num_features = torch.LongTensor(state[:, :-self.num_numfeat]).to(self.device), \
+                                      torch.FloatTensor(state[:, -self.num_numfeat:]).to(self.device)
+        ncate_features, nnum_features = torch.LongTensor(nstate[:, :-self.num_numfeat]).to(self.device), \
+                                        torch.FloatTensor(nstate[:, -self.num_numfeat:]).to(self.device)
 
         action = torch.FloatTensor(transition['action']).to(self.device)
         reward = torch.FloatTensor(transition['reward'].reshape(-1, 2)).to(self.device)
