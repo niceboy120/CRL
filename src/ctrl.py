@@ -405,6 +405,7 @@ class CTRL(nn.Module):
         y = self.head(self.ln_head(global_state_tokens))
         loss, loss_mean = None, None
         if targets is not None:
+            # targets = targets.type(torch.long)
             loss = self.get_loss(y, targets)
             loss_mask = loss.masked_fill(mask.reshape(-1), 0)
             loss_mean = loss_mask.sum() / (~mask.reshape(-1)).sum() # get the masked average loss

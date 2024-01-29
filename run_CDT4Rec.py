@@ -45,7 +45,7 @@ def get_args():
     parser.add_argument("--batch_size", type=int, default=1024)
     parser.add_argument("--local_D", type=int, default=32)
     parser.add_argument("--global_D", type=int, default=40)
-    parser.add_argument("--n_layer", type=int, default=2)
+    parser.add_argument("--n_layer", type=int, default=3)
 
     parser.add_argument("--is_reload", dest="reload", action="store_true")
     parser.add_argument("--no_reload", dest="reload", action="store_false")
@@ -59,7 +59,7 @@ def get_args():
     parser.add_argument("--seed", type=int, default=2024)
 
     parser.add_argument("--cuda", type=int, default=2)
-    parser.add_argument("--message", type=str, default="cdt4rec")
+    parser.add_argument("--message", type=str, default="CDT4Rec")
 
     # parser.add_argument("--env", type=str, default="KuaiRand-1K")
     args = parser.parse_known_args()[0]
@@ -77,15 +77,13 @@ def get_args():
 
     return args
 
-
-
 def main(args):
     args = get_common_args(args)
     MODEL_SAVE_PATH, logger_path = prepare_dir_log(args)
     # NOTE: set seed
     set_seed(args.seed)
 
-    train_dataset, test_dataset, env, mat = prepare_dataset(args)
+    train_dataset, test_dataset, env, mat = prepare_dataset(args, with_rating=True)
     # get model
     mconf = CDT4RecConfig(
         train_dataset.num_items, pos_drop=0.1, resid_drop=0.1, 

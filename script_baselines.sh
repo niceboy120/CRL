@@ -41,3 +41,18 @@ python run_RMTL.py --env Zhihu-1M      --epoch 30 --device 3 --augment_rate 0 --
 python run_RMTL.py --env ml-1m         --epoch 30 --device 4 --augment_rate 0 --actor_model_name singletask &
 python run_RMTL.py --env KuaiRand-Pure --epoch 30 --device 5 --augment_rate 0 --actor_model_name singletask &
 python run_RMTL.py --env Zhihu-1M      --epoch 30 --device 6 --augment_rate 0 --actor_model_name singletask &
+
+
+# DT4Rec
+
+
+
+
+# CDT4Rec
+python run_DT4Rec.py --env ml-1m         --epoch 30 --cuda 0 --augment_rate 0 &
+python run_DT4Rec.py --env KuaiRand-Pure --epoch 30 --cuda 1 --augment_rate 0 &
+python run_DT4Rec.py --env Zhihu-1M      --epoch 30 --cuda 2 --augment_rate 0 &
+
+python run_CDT4Rec.py --env ml-1m         --epoch 30 --cuda 7 --augment_rate 0 &
+python run_CDT4Rec.py --env KuaiRand-Pure --epoch 30 --cuda 6 --augment_rate 0 &
+python run_CDT4Rec.py --env Zhihu-1M      --epoch 30 --cuda 5 --augment_rate 0 &

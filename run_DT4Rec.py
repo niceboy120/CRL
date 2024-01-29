@@ -38,9 +38,9 @@ def get_args():
     parser.add_argument("--max_item_list_len", type=int, default=30)
     parser.add_argument("--len_reward_to_go", type=int, default=10)
 
-    parser.add_argument("--model_name", type=str, default="ctrl")
+    parser.add_argument("--model_name", type=str, default="DT4Rec")
 
-    parser.add_argument("--batch_size", type=int, default=1024)
+    parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--n_embd", type=int, default=32)
     parser.add_argument("--global_D", type=int, default=40)
     parser.add_argument("--n_layer", type=int, default=2)
@@ -56,8 +56,8 @@ def get_args():
     parser.add_argument("--lr", type=float, default=1e-2)
     parser.add_argument("--seed", type=int, default=2024)
 
-    parser.add_argument("--cuda_id", type=int, default=2)
-    parser.add_argument("--message", type=str, default="test")
+    parser.add_argument("--cuda", type=int, default=2)
+    parser.add_argument("--message", type=str, default="DT4Rec")
 
     # parser.add_argument("--env", type=str, default="KuaiRand-1K")
     args = parser.parse_known_args()[0]
@@ -69,7 +69,7 @@ def get_args():
     
     device = 'cpu'
     if torch.cuda.is_available():
-        device = f'cuda:{args.cuda_id}'
+        device = f'cuda:{args.cuda}'
         # model = torch.nn.DataParallel(model).to(device)
     args.device = device
 

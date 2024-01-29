@@ -5,7 +5,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from d2l import torch as d2l
+# from d2l import torch as d2l
 
 # from timm.models.layers import trunc_normal_
 from torch.nn.init import trunc_normal_
@@ -123,7 +123,7 @@ class Block(nn.Module):
         x = x + self.mlp(self.ln2(x))
         return x
 
-class Seq2SeqEncoder(d2l.Encoder):
+class Seq2SeqEncoder(nn.Module):
     """用于序列到序列学习的循环神经网络编码器"""
     def __init__(self, vocab_size, embed_size, num_hiddens, num_layers,
                  dropout=0, **kwargs):
@@ -290,6 +290,7 @@ class DT4Rec(nn.Module):
         if targets is None:
             actions = states
         else:
+            targets = targets.type(torch.long)
             actions = torch.zeros([states.size(0), states.size(1), self.max_seqlens], device=states.device)
             for i in range(states.size(0)):
                 for j in range(states.size(1)):
@@ -362,7 +363,7 @@ class DT4Rec(nn.Module):
 
         for i in range(actions.shape[1]):
             logits_new = target_logits[:, i, :].squeeze(1)
-            targets_seq = targets[:, i, :].type(torch.long).squeeze(1)
+            targets_seq = targets[:, i, :].squeeze(1)
             # neg_seq = actions_neg[:, i, :].type(torch.long).squeeze(1)
             # pos_seq = actions[:, i, :].type(torch.long).squeeze(1)
             # bos = torch.tensor([0] * targets_seq.shape[0]).reshape(-1, 1).to(reward.device)

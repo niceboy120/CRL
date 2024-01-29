@@ -185,14 +185,16 @@ def split_and_construct_dataset(df_user, df_item, x_columns, reward_columns, seq
 
     return train_dataset, test_dataset
 
-def get_upside_down_columns(user_columns, item_columns, reward_columns):
+def get_upside_down_columns(user_columns, item_columns, reward_columns, with_rating=False):
     seq_columns = item_columns
     x_columns = user_columns
     reward_columns = reward_columns
-    y_column = item_columns[0]
+    y_column = [item_columns[0]] + ([item_columns[-1]] if with_rating else [])
+    assert item_columns[-1].name == "rating"
+    assert item_columns[0].name == "item_id"
     return x_columns, seq_columns, reward_columns, y_column
 
-def prepare_dataset(args):
+def prepare_dataset(args, with_rating=False):
     DataClass = get_DataClass(args.env)
     dataset = DataClass()
     df_data, df_user, df_item, list_feat = dataset.get_data()
@@ -208,7 +210,7 @@ def prepare_dataset(args):
     user_columns, item_columns, reward_columns = get_xy_columns(
         df_user, df_item, user_features, item_features, reward_features, args.local_D, args.local_D)
 
-    x_columns, seq_columns, reward_columns, y_column = get_upside_down_columns(user_columns, item_columns, reward_columns)
+    x_columns, seq_columns, reward_columns, y_column = get_upside_down_columns(user_columns, item_columns, reward_columns, with_rating=with_rating)
 
     df_seq_rewards, hist_seq_dict, to_go_seq_dict = dataset.get_and_save_seq_data(df_data, df_user, df_item,
         x_columns, reward_columns, seq_columns, args.max_item_list_len, args.len_reward_to_go, args.reload, 

@@ -16,7 +16,7 @@ class StateActionReturnDataset(Dataset):
         self.user_index = user_index
         
         self.num_users = x_columns[0].vocabulary_size
-        self.num_items = y_column.vocabulary_size
+        self.num_items = y_column[0].vocabulary_size
     
     def compile(self, df_seq_rewards, hist_seq_dict, to_go_seq_dict):
 
@@ -34,7 +34,9 @@ class StateActionReturnDataset(Dataset):
 
         self.len_hist = hist_seq_dict["len_hist"]
 
-        self.y_numpy = df_seq_rewards[self.y_column.name].to_numpy().reshape(-1, 1)
+        y_list = [df_seq_rewards[column.name].to_numpy().reshape(-1, 1) for column in self.y_column]
+        self.y_numpy = np.concatenate(y_list, axis=-1)
+        # self.y_numpy = df_seq_rewards[self.y_column.name].to_numpy().reshape(-1, 1)
 
         # The last id corresponds to the padding id!
         self.x_numpy = np.concatenate([self.x_numpy, np.zeros_like(self.x_numpy[0:1])], axis=0)
@@ -47,7 +49,7 @@ class StateActionReturnDataset(Dataset):
         self.x_numpy = self.x_numpy.astype(np.float32)
         self.reward_numpy = self.reward_numpy.astype(np.float32)
         self.seq_numpy = self.seq_numpy.astype(np.float32)
-        self.y_numpy = self.y_numpy.astype(np.int64)
+        self.y_numpy = self.y_numpy.astype(np.float32)
 
         # unique_elements, indices = np.unique(self.x_numpy, return_index=True)
         # self.timestep = np.zeros_like(self.x_numpy.squeeze(), dtype=np.int64)

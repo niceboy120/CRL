@@ -92,44 +92,27 @@ class SABlock(nn.Module):
         # patch_count = h*w//p1//p2
 
         self.local_block = _SABlock(config, config.local_N_head, config.local_D)
-        self.global_block = _SABlock(config, config.N_head, config.global_D)
+        # self.global_block = _SABlock(config, config.N_head, config.global_D)
 
-        if 'fusion' in config.model_name:
-            self.register_buffer("mask", torch.tril(torch.ones(config.max_seqlens*2, config.max_seqlens*2))
-                                     .view(1, 1, config.max_seqlens*2, config.max_seqlens*2))
-        else:
-            self.register_buffer("mask", torch.tril(torch.ones(config.max_seqlens*2, config.max_seqlens*2))
-                                     .view(1, 1, config.max_seqlens*2, config.max_seqlens*2))
-            for i in range(0, config.max_seqlens*2, 2):
-                self.mask[0, 0, i, i-1] = 1.
+        self.register_buffer("mask", torch.tril(torch.ones(config.max_seqlens*2, config.max_seqlens*2))
+                                 .view(1, 1, config.max_seqlens*2, config.max_seqlens*2))
+        for i in range(0, config.max_seqlens*2, 2):
+            self.mask[0, 0, i, i-1] = 1.
 
         self.local_norm = nn.LayerNorm(config.local_D)
-        if 'stack' not in config.model_name:
-            self.local_global_proj = nn.Sequential(
-                    nn.Linear(config.local_num_feat * config.local_D, config.global_D), # +1 for action token
-                    nn.LayerNorm(config.global_D)
-            )
         
         
-    def forward(self, local_tokens, global_tokens, temporal_emb=None):
+    def forward(self, local_tokens, temporal_emb=None):
 
         B, T, P, d = local_tokens.size()
-        local_tokens, local_att = self.local_block(local_tokens.reshape(-1, P, d))
-        local_tokens = local_tokens.reshape(B, T, P, d)
-        lt_tmp = self.local_norm(local_tokens.reshape(-1, d)).reshape(B*T, P*d)
-        lt_tmp = self.local_global_proj(lt_tmp).reshape(B, T, -1)
-        if 'fusion' in self.config.model_name or 'xconv' in self.config.model_name:
-            global_tokens += lt_tmp
-            if ('xconv' in self.config.model_name) and (temporal_emb is not None):
-                global_tokens += temporal_emb
-            global_tokens, global_att = self.global_block(global_tokens, self.mask)
-            return local_tokens, global_tokens, local_att, global_att
-        else:
-            if temporal_emb is not None:
-                lt_tmp += temporal_emb
-            global_tokens = torch.stack((lt_tmp, global_tokens), dim=2).view(B, -1, self.config.global_D)
-            global_tokens, global_att = self.global_block(global_tokens, self.mask)
-            return local_tokens, global_tokens[:, 1::2], local_att, global_att
+        local_tokens, local_att = self.local_block(local_tokens.reshape(B, T * P, d))
+        # local_tokens = local_tokens.reshape(B, T, P, d)
+        lt_tmp = self.local_norm(local_tokens.reshape(-1, d)).reshape(B, T, P, d)
+
+        if temporal_emb is not None:
+            lt_tmp += temporal_emb
+
+        return lt_tmp, local_att
                 
 
 
@@ -157,6 +140,16 @@ class PatchEmb(nn.Module):
             nn.ReLU(),
             nn.Linear(64, config.hidden_size)
         )
+        self.reward_encoder = nn.Sequential(
+            nn.Linear(compute_input_dim(config.reward_columns), 64),
+            nn.ReLU(),
+            nn.Linear(64, config.hidden_size)
+        )
+        self.state_encoder = nn.Sequential(
+            nn.Linear(config.hidden_size * 2, 64),
+            nn.ReLU(),
+            nn.Linear(64, config.hidden_size)
+        )
 
 
         self.feature_embedding = create_embedding_matrix(config.x_columns, init_std=0.0001, linear=False, sparse=False, device='cpu')
@@ -168,10 +161,10 @@ class PatchEmb(nn.Module):
         self.reward_index = build_input_features(config.reward_columns)
         self.seq_index = build_input_features(config.seq_columns)
         
-        self.global_proj = nn.Sequential(nn.Linear(config.local_D, config.global_D), # +1 for action token
-                                         nn.LayerNorm(config.global_D))
+        # self.global_proj = nn.Sequential(nn.Linear(config.local_D, config.global_D), # +1 for action token
+        #                                  nn.LayerNorm(config.global_D))
 
-        self.temporal_emb = nn.Parameter(torch.zeros(1, config.max_seqlens, config.global_D))
+        self.temporal_emb = nn.Parameter(torch.zeros(1, config.max_seqlens, 3, config.local_D)) # 4 is the length of (reward_representation, state_representation, action)
 
     
     @torch.jit.ignore
@@ -209,6 +202,7 @@ class PatchEmb(nn.Module):
         action_tensor = self.action_embedding(action).unsqueeze(2)
 
         user_representation = self.user_encoder(x_tensor)
+        reward_representation = self.reward_encoder(reward_tensor.view(reward_tensor.shape[0], reward_tensor.shape[1], -1)).unsqueeze(2)
 
 
         seq_tensor_masked = seq_tensor[mask]
@@ -226,11 +220,13 @@ class PatchEmb(nn.Module):
 
         gru_output_recovered = gru_output.reshape(num_batch, len_data_with_padding, 1, -1)
 
-        local_tokens = torch.cat([reward_tensor, user_representation, gru_output_recovered, action_tensor], dim=2)
+        state_represenation = self.state_encoder(torch.concat([user_representation, gru_output_recovered], dim=-1))
 
-        global_tokens = self.global_proj(gru_output_recovered.squeeze(2))
+        local_tokens = torch.cat([reward_representation, state_represenation, action_tensor], dim=2)
 
-        return local_tokens, global_tokens, self.temporal_emb[:, :len_data_with_padding]
+        # global_tokens = self.global_proj(gru_output_recovered.squeeze(2))
+
+        return local_tokens, self.temporal_emb[:, :len_data_with_padding]
 
 
 
@@ -251,21 +247,27 @@ class CDT4Rec(nn.Module):
         self.blocks = nn.ModuleList([SABlock(config) for _ in range(config.n_layer)])
         
         self.local_pos_drop = nn.Dropout(config.pos_drop)
-        self.global_pos_drop = nn.Dropout(config.pos_drop)
+        # self.global_pos_drop = nn.Dropout(config.pos_drop)
         self.device = config.device
 
-        if 'stack' in config.model_name:
-            self.local_global_proj = nn.Sequential(
-                    nn.Linear(config.local_num_feat * config.local_D, config.global_D), # +1 for action token
-                    nn.LayerNorm(config.global_D)
-            )
+
         self.ln_head = nn.LayerNorm(config.global_D)
-        if 'continuous' in config.action_type:
-            self.head = nn.Sequential(
-                    *([nn.Linear(config.global_D, config.num_item)] + [nn.Tanh()])
-                )
-        else:
-            self.head = nn.Linear(config.global_D, config.num_item)
+
+        # self.head = nn.Linear(self.config.local_D, config.num_item)
+        self.pred_s = nn.Linear(self.config.local_D, self.config.local_D)
+        self.pred_a = nn.Linear(self.config.local_D, self.config.local_D)
+
+        self.head_r = nn.Sequential(
+            nn.Linear(self.config.local_D * 2, 64),
+            nn.ReLU(),
+            nn.Linear(64, 1)
+        )
+        self.head_a = nn.Sequential(
+            nn.Linear(self.config.local_D + 1, 64),
+            nn.ReLU(),
+            nn.Linear(64, self.config.num_item)
+        )
+
         
         self.apply(self._init_weights)
         
@@ -345,31 +347,46 @@ class CDT4Rec(nn.Module):
     def forward(self, x, reward, seq, targets, len_data, len_hist):
         # actions should be already padded by dataloader
 
-        local_tokens, global_state_tokens, temporal_emb = self.token_emb(x, reward, seq, len_data, len_hist)
+        local_tokens, temporal_emb = self.token_emb(x, reward, seq, len_data, len_hist)
         local_tokens = self.local_pos_drop(local_tokens)
 
-        global_state_tokens = self.global_pos_drop(global_state_tokens)
+        # global_state_tokens = self.global_pos_drop(global_state_tokens)
         
         B, T, P, d = local_tokens.size()
-        local_atts, global_atts = [], []
 
         for i, blk in enumerate(self.blocks):
-            local_tokens, global_state_tokens, local_att, global_att = blk(local_tokens, global_state_tokens, temporal_emb)
+            local_tokens, local_att = blk(local_tokens, temporal_emb)
         
         # Create the mask using len_data
         mask = torch.arange(T).unsqueeze(0).to(len_data.device) >= len_data.unsqueeze(1)
         # Apply the mask to global_state_tokens
-        global_state_tokens = global_state_tokens.masked_fill(mask.unsqueeze(-1), 0)
-        
-        y = self.head(self.ln_head(global_state_tokens))
-        loss, loss_mean = None, None
+        # global_state_tokens = global_state_tokens.masked_fill(mask.unsqueeze(-1), 0)
+
+        local_tokens_masked = local_tokens.masked_fill(mask.unsqueeze(-1).unsqueeze(-1), 0)
+
+        G_L = local_tokens_masked[:, :, 0, :].reshape(B, T, -1)
+        s_L = local_tokens_masked[:, :, 1, :].reshape(B, T, -1)
+        a_L = local_tokens_masked[:, :, 2, :].reshape(B, T, -1)
+
+
+        # GELU activation:
+        Psi_a = F.gelu(self.pred_s(G_L + s_L))
+        Psi_t = F.gelu(self.pred_s(s_L + a_L))
+
+        r_pred = self.head_r(torch.concat([Psi_a, Psi_t], dim=-1))
+        a_pred = self.head_a(torch.concat([Psi_t, r_pred], dim=-1))
+
+        loss_mean = None
         if targets is not None:
-            loss = self.get_loss(y, targets)
+            loss_a = self.get_loss(a_pred, targets[:,:,0])
+            loss_r = F.mse_loss(r_pred.squeeze(2), targets[:,:,-1], reduction='none').reshape(-1)
+            loss = loss_a + loss_r
+
             loss_mask = loss.masked_fill(mask.reshape(-1), 0)
             loss_mean = loss_mask.sum() / (~mask.reshape(-1)).sum() # get the masked average loss
             
-        y_last = torch.gather(y, 1, len_data.long().view(-1, 1, 1).expand(-1, 1, y.size(2))-1).squeeze(1)
-        return y_last, (local_atts, global_atts), loss_mean
+        y_last = torch.gather(a_pred, 1, len_data.long().view(-1, 1, 1).expand(-1, 1, a_pred.size(2))-1).squeeze(1)
+        return y_last, None, loss_mean
         # return y[:, -1], (local_atts, global_atts), loss_mean
         
     
