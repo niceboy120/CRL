@@ -5,6 +5,7 @@ import logzero
 import numpy as np
 
 import pandas as pd
+from sklearn.preprocessing import LabelEncoder
 from tqdm import tqdm
 from numba import njit
 
@@ -13,20 +14,18 @@ from .get_pareto_front import get_kde_density, get_pareto_front
 
 
 class SLEnv:
-    def __init__(self, item_columns, reward_columns, user_padding_id, item_padding_id):
+    def __init__(self, item_columns, reward_columns):
 
         item_features = [col.name for col in item_columns]
         self.item_col = item_features.index("item_id")
 
         reward_features = [col.name for col in reward_columns]
         self.rating_col = reward_features.index("sum_rating")
-        self.item_padding_id = None
 
         self.reward_columns = reward_columns
         self.target_features = [column.name for column in reward_columns]
 
-        self.user_padding_id = user_padding_id
-        self.item_padding_id = item_padding_id
+
 
     def reset(self, ):
         pass
@@ -38,10 +37,8 @@ class SLEnv:
 
         # indices[:len_data_batch[0,0]] # todo: adjust the indices
 
-        to_go_item_array = seq_batch[:, -1, self.item_col, -eval_round:].astype(
-            int)  # TODO: Note: dim2 = 0 indicates the item_id
-        to_go_rating_array = seq_batch[:, -1, self.rating_col,
-                             -eval_round:]  # TODO: note that the last index (-1) indicates the rating column!
+        to_go_item_array = seq_batch[:, -1, self.item_col, -eval_round:].astype(int)  # TODO: Note: dim2 = 0 indicates the item_id
+        to_go_rating_array = seq_batch[:, -1, self.rating_col,-eval_round:]  # TODO: note that the last index (-1) indicates the rating column!
 
         res = self.evaluate(to_go_item_array, to_go_rating_array)
 
@@ -52,6 +49,12 @@ class SLEnv:
         self.df_user = df_user
         self.df_item = df_item
         self.tag_label = tag_label
+
+        # labelencoder for movielens data
+        self.lbe_user = LabelEncoder()
+        self.lbe_user.fit(df_user.index)
+        self.lbe_item = LabelEncoder()
+        self.lbe_item.fit(df_item.index)
 
         item_count = self.df_data.groupby("item_id").agg(len)["user_id"]
         # item_count_set = df.groupby("item_id").agg(lambda x: len(set(x)))["user_id"]

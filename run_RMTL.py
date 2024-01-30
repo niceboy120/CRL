@@ -56,7 +56,7 @@ def get_SL_args():
     parser.add_argument('--batch_size', type=int, default=2048)
     parser.add_argument('--embed_dim', type=int, default=128)
     parser.add_argument('--weight_decay', type=float, default=1e-6)
-    parser.add_argument('--device', type=int, default=7)
+    parser.add_argument('--cuda', type=int, default=7)
     # parser.add_argument('--save_dir', default='saved_models/SL')
 
     # added arguments_for_CRL
@@ -79,7 +79,7 @@ def get_SL_args():
     args = get_common_args(args)
 
     args.model_name = f"{args.model_name}_{args.actor_model_name}"
-    args.device = f'cuda:{args.device}' if torch.cuda.is_available() else 'cpu'
+    args.device = f'cuda:{args.cuda}' if torch.cuda.is_available() else 'cpu'
     MODEL_SAVE_PATH, logger_path = prepare_dir_log(args)
     return args
 
@@ -217,7 +217,7 @@ def get_datasets(args):
 
     # EnvClass = DataClass.get_env_class()
     # env = EnvClass(df_seq_rewards, target_features=reward_features, pareto_reload=args.reload, seq_columns=seq_columns)
-    env = SLEnv(item_columns, reward_columns, dataset.user_padding_id, dataset.item_padding_id)
+    env = SLEnv(item_columns, reward_columns)
     env.compile_test(df_data, df_user, df_item)
     mat = dataset.get_completed_data(args.device)
 

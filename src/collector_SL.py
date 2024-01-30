@@ -20,10 +20,21 @@ class Collector_Baseline_SL:
         if self.test_seq_length > self.buffer_length:
             self.buffer_length = self.test_seq_length
 
-        if env.item_padding_id is not None:
-            self.mat = np.delete(self.mat, env.item_padding_id, axis=1)
-        if env.user_padding_id is not None:
-            self.mat = np.delete(self.mat, env.user_padding_id, axis=0)
+        # env = self.env
+        # env.lbe_user = LabelEncoder()
+        # env.lbe_user.fit(env.df_user.index)
+        #
+        # env.lbe_item = LabelEncoder()
+        # env.lbe_item.fit(env.df_item.index)
+
+        self.user_id_col = [col.name for col in self.test_dataset.user_columns].index("user_id")
+
+
+
+        # if env.item_padding_id is not None:
+        #     self.mat = np.delete(self.mat, env.item_padding_id, axis=1)
+        # if env.user_padding_id is not None:
+        #     self.mat = np.delete(self.mat, env.user_padding_id, axis=0)
 
 
     def collect(self, user_batch_size=2, num_workers=4):
@@ -33,7 +44,7 @@ class Collector_Baseline_SL:
 
         all_hist_item = []
         all_feedback = []
-        for user_idx, user_feat in tqdm(enumerate(self.test_dataset.user_numpy), desc="collecting user feedback for all users", total=len(self.test_dataset.user_numpy)):
+        for k, user_feat in tqdm(enumerate(self.test_dataset.user_numpy), desc="collecting user feedback for all users", total=len(self.test_dataset.user_numpy)):
             item_feat = self.test_dataset.item_numpy
 
             cate_feat = np.array([np.concatenate([user_feat[self.test_dataset.cate_user_idx], item[self.test_dataset.cate_item_idx]], axis=-1) for item in item_feat])
@@ -55,9 +66,11 @@ class Collector_Baseline_SL:
             y_pred = torch.topk(y_logits_masked, self.test_seq_length, dim=-1).indices.cpu().numpy()
 
             # Obtain reward:
-            feedback = self.mat[user_idx, y_pred]
+            user_raw_id = user_feat[self.user_id_col]
+            item_raw_id = self.env.lbe_item.inverse_transform(y_pred)
+            feedback = self.mat[user_raw_id, item_raw_id]
 
-            all_hist_item.append(y_pred)
+            all_hist_item.append(item_raw_id)
             all_feedback.append(feedback)
 
         all_hist_item_numpy = np.array(all_hist_item)
